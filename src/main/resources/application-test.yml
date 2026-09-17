@@ -1,0 +1,3 @@
+# No static datasource here: integration tests provide their own Postgres
+# via Testcontainers + @ServiceConnection, which injects connection details
+# at runtime. ddl-auto/flyway settings are inherited from application.yml.
