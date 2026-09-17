@@ -24,6 +24,7 @@ class GlobalExceptionHandlerTest {
 		mockMvc.perform(get("/test/not-found"))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.status").value(404))
+				.andExpect(jsonPath("$.errorCode").value("RESOURCE-001"))
 				.andExpect(jsonPath("$.detail").value("Widget 42 not found"));
 	}
 
@@ -32,6 +33,7 @@ class GlobalExceptionHandlerTest {
 		mockMvc.perform(get("/test/conflict"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.status").value(409))
+				.andExpect(jsonPath("$.errorCode").value("RESOURCE-002"))
 				.andExpect(jsonPath("$.detail").value("Widget 42 already exists"));
 	}
 
@@ -41,6 +43,7 @@ class GlobalExceptionHandlerTest {
 						.contentType("application/json")
 						.content("{\"name\": \"\"}"))
 				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errorCode").value("VALIDATION-001"))
 				.andExpect(jsonPath("$.errors", hasSize(1)))
 				.andExpect(jsonPath("$.errors[0].field").value("name"));
 	}
@@ -49,6 +52,7 @@ class GlobalExceptionHandlerTest {
 	void unexpectedException_returns500ProblemDetail() throws Exception {
 		mockMvc.perform(get("/test/boom"))
 				.andExpect(status().isInternalServerError())
+				.andExpect(jsonPath("$.errorCode").value("SERVER-001"))
 				.andExpect(jsonPath("$.detail").value("An unexpected error occurred"));
 	}
 
