@@ -1,0 +1,2 @@
+-- Baseline migration. Intentionally empty: establishes Flyway's schema
+-- history table before any domain migrations exist.
