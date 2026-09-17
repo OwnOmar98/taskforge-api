@@ -7,10 +7,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import com.taskforge.auth.AuthErrorCode;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -19,17 +22,27 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(ResourceNotFoundException.class)
 	public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
-		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+		return problemDetail(HttpStatus.NOT_FOUND, ex.getErrorCode(), ex.getMessage());
 	}
 
 	@ExceptionHandler(ConflictException.class)
 	public ProblemDetail handleConflict(ConflictException ex) {
-		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		return problemDetail(HttpStatus.CONFLICT, ex.getErrorCode(), ex.getMessage());
+	}
+
+	@ExceptionHandler(AuthenticationException.class)
+	public ProblemDetail handleAuthentication(AuthenticationException ex) {
+		// Same message regardless of whether the email or the password was wrong -
+		// Spring Security already normalizes "user not found" to this for us, so
+		// don't undo that by branching on exception subtype here.
+		return problemDetail(HttpStatus.UNAUTHORIZED, AuthErrorCode.INVALID_CREDENTIALS,
+				AuthErrorCode.INVALID_CREDENTIALS.defaultMessage());
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
-		ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+		ProblemDetail problemDetail = problemDetail(HttpStatus.BAD_REQUEST, GeneralErrorCode.VALIDATION_FAILED,
+				GeneralErrorCode.VALIDATION_FAILED.defaultMessage());
 		List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
 				.map(this::toFieldError)
 				.toList();
@@ -40,7 +53,14 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(Exception.class)
 	public ProblemDetail handleUnexpected(Exception ex) {
 		log.error("Unexpected error", ex);
-		return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+		return problemDetail(HttpStatus.INTERNAL_SERVER_ERROR, GeneralErrorCode.SERVER_UNEXPECTED_ERROR,
+				GeneralErrorCode.SERVER_UNEXPECTED_ERROR.defaultMessage());
+	}
+
+	private ProblemDetail problemDetail(HttpStatus status, ErrorCode errorCode, String detail) {
+		ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
+		problemDetail.setProperty("errorCode", errorCode.code());
+		return problemDetail;
 	}
 
 	private Map<String, String> toFieldError(FieldError fieldError) {

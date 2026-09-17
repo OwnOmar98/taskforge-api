@@ -6,8 +6,15 @@ package com.taskforge.common.exception;
  */
 public abstract class DomainException extends RuntimeException {
 
-	protected DomainException(String message) {
+	private final ErrorCode errorCode;
+
+	protected DomainException(ErrorCode errorCode, String message) {
 		super(message);
+		this.errorCode = errorCode;
+	}
+
+	public ErrorCode getErrorCode() {
+		return errorCode;
 	}
 
 }

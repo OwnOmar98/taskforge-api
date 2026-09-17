@@ -10,3 +10,7 @@ spring:
 logging:
   level:
     org.hibernate.SQL: debug
+
+app:
+  jwt:
+    secret: dev-only-jwt-signing-secret-do-not-use-in-prod-0123456789

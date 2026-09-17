@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.taskforge.common.exception.ConflictException;
+import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
 
 @RestController
@@ -17,12 +18,12 @@ public class TestExceptionController {
 
 	@GetMapping("/not-found")
 	public void notFound() {
-		throw new ResourceNotFoundException("Widget 42 not found");
+		throw new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND, "Widget 42 not found");
 	}
 
 	@GetMapping("/conflict")
 	public void conflict() {
-		throw new ConflictException("Widget 42 already exists");
+		throw new ConflictException(GeneralErrorCode.RESOURCE_CONFLICT, "Widget 42 already exists");
 	}
 
 	@PostMapping("/validate")

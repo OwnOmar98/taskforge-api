@@ -7,3 +7,7 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+
+app:
+  jwt:
+    access-token-ttl: 15m
