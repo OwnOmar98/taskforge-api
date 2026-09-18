@@ -49,6 +49,14 @@ class UserRepositoryTest {
 	}
 
 	@Test
+	void emailIsNormalizedToLowerCaseOnSave() {
+		userRepository.saveAndFlush(new User("Mixed.Case@Acme.test", "hash", "Someone"));
+
+		assertEquals("mixed.case@acme.test",
+				userRepository.findByEmail("mixed.case@acme.test").orElseThrow().getEmail());
+	}
+
+	@Test
 	void rejectsNullEmail() {
 		assertThrows(DataIntegrityViolationException.class,
 				() -> userRepository.saveAndFlush(new User(null, "hash", "Owner")));
