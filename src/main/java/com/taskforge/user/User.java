@@ -14,6 +14,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.taskforge.common.EmailNormalizer;
+
 @Entity
 @Table(name = "users")
 @Getter
@@ -37,7 +39,7 @@ public class User {
 	private Instant createdAt;
 
 	public User(String email, String passwordHash, String fullName) {
-		this.email = email;
+		this.email = EmailNormalizer.normalize(email);
 		this.passwordHash = passwordHash;
 		this.fullName = fullName;
 	}

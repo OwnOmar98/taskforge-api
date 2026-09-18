@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +20,7 @@ import com.taskforge.auth.dto.MeResponse;
 import com.taskforge.auth.dto.RefreshRequest;
 import com.taskforge.auth.dto.RegisterRequest;
 import com.taskforge.common.exception.ConflictException;
+import com.taskforge.organization.InvitationService;
 import com.taskforge.security.CurrentUserId;
 import com.taskforge.security.JwtService;
 import com.taskforge.security.RefreshTokenService;
@@ -36,19 +38,25 @@ public class AuthController {
 	private final AuthenticationManager authenticationManager;
 	private final JwtService jwtService;
 	private final RefreshTokenService refreshTokenService;
+	private final InvitationService invitationService;
 
 	public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
 			AuthenticationManager authenticationManager, JwtService jwtService,
-			RefreshTokenService refreshTokenService) {
+			RefreshTokenService refreshTokenService, InvitationService invitationService) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.authenticationManager = authenticationManager;
 		this.jwtService = jwtService;
 		this.refreshTokenService = refreshTokenService;
+		this.invitationService = invitationService;
 	}
 
+	// @Transactional so a bad/expired/mismatched invitationToken rolls back the
+	// User creation too - registering with a token is one atomic operation,
+	// not "create the account regardless, then maybe join the org".
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
+	@Transactional
 	public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
 		if (userRepository.findByEmail(request.email()).isPresent()) {
 			throw new ConflictException(AuthErrorCode.EMAIL_IN_USE, AuthErrorCode.EMAIL_IN_USE.defaultMessage());
@@ -56,6 +64,10 @@ public class AuthController {
 
 		User user = userRepository.save(
 				new User(request.email(), passwordEncoder.encode(request.password()), request.fullName()));
+
+		if (request.invitationToken() != null && !request.invitationToken().isBlank()) {
+			invitationService.acceptInvitation(request.invitationToken(), user);
+		}
 
 		return new AuthResponse(jwtService.generateAccessToken(user.getId()), refreshTokenService.issue(user));
 	}

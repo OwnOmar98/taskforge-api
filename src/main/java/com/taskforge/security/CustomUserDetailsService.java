@@ -7,6 +7,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import com.taskforge.common.EmailNormalizer;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
@@ -21,7 +22,7 @@ public class CustomUserDetailsService implements UserDetailsService {
 
 	@Override
 	public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-		User user = userRepository.findByEmail(email)
+		User user = userRepository.findByEmail(EmailNormalizer.normalize(email))
 				.orElseThrow(() -> new UsernameNotFoundException("No user with email " + email));
 
 		return new org.springframework.security.core.userdetails.User(

@@ -117,6 +117,38 @@ class AuthControllerTest {
 	}
 
 	@Test
+	void registeringWithDifferentEmailCasingIsStillTreatedAsADuplicate() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								new RegisterRequest("Dup2@acme.test", "supersecret", "Someone"))))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(post("/api/v1/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								new RegisterRequest("dup2@acme.test", "supersecret", "Someone Else"))))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.errorCode").value(EMAIL_IN_USE.code()));
+	}
+
+	@Test
+	void loggingInWithDifferentEmailCasingStillWorks() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								new RegisterRequest("Casey@acme.test", "supersecret", "Casey"))))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(post("/api/v1/auth/login")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								new LoginRequest("CASEY@acme.test", "supersecret"))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accessToken").isNotEmpty());
+	}
+
+	@Test
 	void meWithoutTokenReturns401() throws Exception {
 		mockMvc.perform(get("/api/v1/auth/me"))
 				.andExpect(status().isUnauthorized())
