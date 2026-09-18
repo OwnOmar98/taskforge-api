@@ -20,7 +20,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({ JwtProperties.class, RefreshTokenProperties.class })
 public class SecurityConfig {
 
 	@Bean
@@ -50,8 +50,9 @@ public class SecurityConfig {
 				.exceptionHandling(exceptions -> exceptions
 						.authenticationEntryPoint(new ProblemDetailAuthenticationEntryPoint(objectMapper)))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/actuator/health",
-								"/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
+						.requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh",
+								"/api/v1/auth/logout", "/actuator/health", "/swagger-ui/**", "/swagger-ui.html",
+								"/v3/api-docs/**")
 						.permitAll()
 						.anyRequest().authenticated())
 				.addFilterBefore(new JwtAuthenticationFilter(jwtService, userRepository),

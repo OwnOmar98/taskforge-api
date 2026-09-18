@@ -16,8 +16,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 import com.taskforge.auth.dto.LoginRequest;
+import com.taskforge.auth.dto.RefreshRequest;
 import com.taskforge.auth.dto.RegisterRequest;
 
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -47,7 +49,8 @@ class AuthControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(registerRequest)))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.accessToken").isNotEmpty());
+				.andExpect(jsonPath("$.accessToken").isNotEmpty())
+				.andExpect(jsonPath("$.refreshToken").isNotEmpty());
 
 		LoginRequest loginRequest = new LoginRequest("owner@acme.test", "supersecret");
 
@@ -56,6 +59,7 @@ class AuthControllerTest {
 						.content(objectMapper.writeValueAsString(loginRequest)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.accessToken").isNotEmpty())
+				.andExpect(jsonPath("$.refreshToken").isNotEmpty())
 				.andReturn();
 
 		String token = objectMapper.readTree(loginResult.getResponse().getContentAsString())
@@ -120,6 +124,75 @@ class AuthControllerTest {
 		mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer not-a-real-token"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.errorCode").value("AUTH-003"));
+	}
+
+	@Test
+	void refreshRotatesTokensAndOldTokenIsRejectedOnReuse() throws Exception {
+		String initialRefreshToken = registerAndGetRefreshToken("rotate@acme.test");
+
+		MvcResult refreshResult = mockMvc.perform(post("/api/v1/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RefreshRequest(initialRefreshToken))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accessToken").isNotEmpty())
+				.andExpect(jsonPath("$.refreshToken").isNotEmpty())
+				.andReturn();
+
+		String rotatedRefreshToken = objectMapper.readTree(refreshResult.getResponse().getContentAsString())
+				.get("refreshToken").stringValue();
+
+		assertNotEquals(initialRefreshToken, rotatedRefreshToken);
+
+		// Reusing the now-rotated original token must be rejected.
+		mockMvc.perform(post("/api/v1/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RefreshRequest(initialRefreshToken))))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.errorCode").value("AUTH-004"));
+
+		// The new token from rotation must still work.
+		mockMvc.perform(post("/api/v1/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RefreshRequest(rotatedRefreshToken))))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void refreshWithInvalidTokenReturns401() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RefreshRequest("not-a-real-refresh-token"))))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.errorCode").value("AUTH-004"));
+	}
+
+	@Test
+	void logoutRevokesTheRefreshToken() throws Exception {
+		String refreshToken = registerAndGetRefreshToken("logout@acme.test");
+
+		mockMvc.perform(post("/api/v1/auth/logout")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RefreshRequest(refreshToken))))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(post("/api/v1/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RefreshRequest(refreshToken))))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.errorCode").value("AUTH-004"));
+	}
+
+	private String registerAndGetRefreshToken(String email) throws Exception {
+		RegisterRequest registerRequest = new RegisterRequest(email, "supersecret", "Owner");
+
+		MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(registerRequest)))
+				.andExpect(status().isCreated())
+				.andReturn();
+
+		return objectMapper.readTree(result.getResponse().getContentAsString())
+				.get("refreshToken").stringValue();
 	}
 
 }

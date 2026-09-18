@@ -30,6 +30,11 @@ public class GlobalExceptionHandler {
 		return problemDetail(HttpStatus.CONFLICT, ex.getErrorCode(), ex.getMessage());
 	}
 
+	@ExceptionHandler(UnauthorizedException.class)
+	public ProblemDetail handleUnauthorized(UnauthorizedException ex) {
+		return problemDetail(HttpStatus.UNAUTHORIZED, ex.getErrorCode(), ex.getMessage());
+	}
+
 	@ExceptionHandler(AuthenticationException.class)
 	public ProblemDetail handleAuthentication(AuthenticationException ex) {
 		// Same message regardless of whether the email or the password was wrong -

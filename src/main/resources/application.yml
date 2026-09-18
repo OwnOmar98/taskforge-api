@@ -11,3 +11,5 @@ spring:
 app:
   jwt:
     access-token-ttl: 15m
+  refresh-token:
+    ttl: 30d

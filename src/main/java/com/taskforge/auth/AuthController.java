@@ -16,10 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.taskforge.auth.dto.AuthResponse;
 import com.taskforge.auth.dto.LoginRequest;
 import com.taskforge.auth.dto.MeResponse;
+import com.taskforge.auth.dto.RefreshRequest;
 import com.taskforge.auth.dto.RegisterRequest;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.security.CurrentUserId;
 import com.taskforge.security.JwtService;
+import com.taskforge.security.RefreshTokenService;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
@@ -33,13 +35,16 @@ public class AuthController {
 	private final PasswordEncoder passwordEncoder;
 	private final AuthenticationManager authenticationManager;
 	private final JwtService jwtService;
+	private final RefreshTokenService refreshTokenService;
 
 	public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
-			AuthenticationManager authenticationManager, JwtService jwtService) {
+			AuthenticationManager authenticationManager, JwtService jwtService,
+			RefreshTokenService refreshTokenService) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.authenticationManager = authenticationManager;
 		this.jwtService = jwtService;
+		this.refreshTokenService = refreshTokenService;
 	}
 
 	@PostMapping("/register")
@@ -52,7 +57,7 @@ public class AuthController {
 		User user = userRepository.save(
 				new User(request.email(), passwordEncoder.encode(request.password()), request.fullName()));
 
-		return new AuthResponse(jwtService.generateAccessToken(user.getId()));
+		return new AuthResponse(jwtService.generateAccessToken(user.getId()), refreshTokenService.issue(user));
 	}
 
 	@PostMapping("/login")
@@ -62,7 +67,20 @@ public class AuthController {
 
 		User user = userRepository.findByEmail(request.email()).orElseThrow();
 
-		return new AuthResponse(jwtService.generateAccessToken(user.getId()));
+		return new AuthResponse(jwtService.generateAccessToken(user.getId()), refreshTokenService.issue(user));
+	}
+
+	@PostMapping("/refresh")
+	public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
+		RefreshTokenService.TokenPair rotated = refreshTokenService.rotate(request.refreshToken());
+
+		return new AuthResponse(jwtService.generateAccessToken(rotated.user().getId()), rotated.refreshToken());
+	}
+
+	@PostMapping("/logout")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void logout(@Valid @RequestBody RefreshRequest request) {
+		refreshTokenService.revoke(request.refreshToken());
 	}
 
 	@GetMapping("/me")
