@@ -2,6 +2,7 @@ package com.taskforge.common.exception.support;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,6 +34,11 @@ public class TestExceptionController {
 	@GetMapping("/boom")
 	public void boom() {
 		throw new RuntimeException("boom");
+	}
+
+	@GetMapping("/forbidden")
+	public void forbidden() {
+		throw new AccessDeniedException("Access is denied");
 	}
 
 	public record TestRequest(@NotBlank String name) {

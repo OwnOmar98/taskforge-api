@@ -56,4 +56,11 @@ class GlobalExceptionHandlerTest {
 				.andExpect(jsonPath("$.detail").value("An unexpected error occurred"));
 	}
 
+	@Test
+	void accessDeniedException_returns403ProblemDetail() throws Exception {
+		mockMvc.perform(get("/test/forbidden"))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.errorCode").value("ACCESS-001"));
+	}
+
 }

@@ -5,6 +5,7 @@ public enum GeneralErrorCode implements ErrorCode {
 	VALIDATION_FAILED("VALIDATION-001", "Validation failed"),
 	RESOURCE_NOT_FOUND("RESOURCE-001", "Resource not found"),
 	RESOURCE_CONFLICT("RESOURCE-002", "Resource conflict"),
+	INSUFFICIENT_PERMISSIONS("ACCESS-001", "You do not have permission to perform this action"),
 	SERVER_UNEXPECTED_ERROR("SERVER-001", "An unexpected error occurred");
 
 	private final String code;

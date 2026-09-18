@@ -43,6 +43,10 @@ public class Organization {
 		this.createdAt = Instant.now();
 	}
 
+	public void rename(String newName) {
+		this.name = newName;
+	}
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
