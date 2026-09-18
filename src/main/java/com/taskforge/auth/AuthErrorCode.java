@@ -6,7 +6,8 @@ public enum AuthErrorCode implements ErrorCode {
 
 	INVALID_CREDENTIALS("AUTH-001", "Invalid email or password"),
 	EMAIL_IN_USE("AUTH-002", "Email already registered"),
-	INVALID_ACCESS_TOKEN("AUTH-003", "Invalid or expired access token");
+	INVALID_ACCESS_TOKEN("AUTH-003", "Invalid or expired access token"),
+	INVALID_REFRESH_TOKEN("AUTH-004", "Invalid or expired refresh token");
 
 	private final String code;
 	private final String defaultMessage;
