@@ -19,6 +19,10 @@ import com.taskforge.auth.dto.LoginRequest;
 import com.taskforge.auth.dto.RefreshRequest;
 import com.taskforge.auth.dto.RegisterRequest;
 
+import static com.taskforge.auth.AuthErrorCode.EMAIL_IN_USE;
+import static com.taskforge.auth.AuthErrorCode.INVALID_ACCESS_TOKEN;
+import static com.taskforge.auth.AuthErrorCode.INVALID_CREDENTIALS;
+import static com.taskforge.auth.AuthErrorCode.INVALID_REFRESH_TOKEN;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -84,7 +88,7 @@ class AuthControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(badLogin)))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-001"));
+				.andExpect(jsonPath("$.errorCode").value(INVALID_CREDENTIALS.code()));
 	}
 
 	@Test
@@ -109,21 +113,21 @@ class AuthControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(request)))
 				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-002"));
+				.andExpect(jsonPath("$.errorCode").value(EMAIL_IN_USE.code()));
 	}
 
 	@Test
 	void meWithoutTokenReturns401() throws Exception {
 		mockMvc.perform(get("/api/v1/auth/me"))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-003"));
+				.andExpect(jsonPath("$.errorCode").value(INVALID_ACCESS_TOKEN.code()));
 	}
 
 	@Test
 	void meWithGarbageTokenReturns401() throws Exception {
 		mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer not-a-real-token"))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-003"));
+				.andExpect(jsonPath("$.errorCode").value(INVALID_ACCESS_TOKEN.code()));
 	}
 
 	@Test
@@ -148,7 +152,7 @@ class AuthControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(new RefreshRequest(initialRefreshToken))))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-004"));
+				.andExpect(jsonPath("$.errorCode").value(INVALID_REFRESH_TOKEN.code()));
 
 		// The new token from rotation must still work.
 		mockMvc.perform(post("/api/v1/auth/refresh")
@@ -163,7 +167,7 @@ class AuthControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(new RefreshRequest("not-a-real-refresh-token"))))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-004"));
+				.andExpect(jsonPath("$.errorCode").value(INVALID_REFRESH_TOKEN.code()));
 	}
 
 	@Test
@@ -179,7 +183,7 @@ class AuthControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(new RefreshRequest(refreshToken))))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("AUTH-004"));
+				.andExpect(jsonPath("$.errorCode").value(INVALID_REFRESH_TOKEN.code()));
 	}
 
 	private String registerAndGetRefreshToken(String email) throws Exception {
