@@ -56,6 +56,14 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 			return canManageProject(userId, projectId);
 		}
 
+		// Tasks have no {orgId} in their path, so TenantInterceptor never runs
+		// for them - this is the only gate standing between a non-member and
+		// task data, unlike Organization/Project routes where it's a backstop.
+		if ("Project".equals(targetType) && "MEMBER".equals(permission)) {
+			UUID projectId = UUID.fromString(targetId.toString());
+			return projectMemberRepository.findByProject_IdAndUser_Id(projectId, userId).isPresent();
+		}
+
 		return false;
 	}
 
