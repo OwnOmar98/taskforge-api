@@ -1,0 +1,255 @@
+package com.taskforge.project;
+
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.taskforge.auth.dto.RegisterRequest;
+import com.taskforge.organization.Membership;
+import com.taskforge.organization.MembershipRepository;
+import com.taskforge.organization.MembershipRole;
+import com.taskforge.organization.Organization;
+import com.taskforge.organization.OrganizationRepository;
+import com.taskforge.organization.dto.CreateOrganizationRequest;
+import com.taskforge.project.dto.CreateProjectRequest;
+import com.taskforge.project.dto.UpdateProjectRequest;
+import com.taskforge.user.User;
+import com.taskforge.user.UserRepository;
+
+import tools.jackson.databind.ObjectMapper;
+
+import static com.taskforge.project.ProjectErrorCode.PROJECT_KEY_IN_USE;
+import static com.taskforge.project.ProjectErrorCode.STALE_PROJECT_VERSION;
+import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Testcontainers
+class ProjectControllerTest {
+
+	@Container
+	@ServiceConnection
+	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private OrganizationRepository organizationRepository;
+
+	@Autowired
+	private MembershipRepository membershipRepository;
+
+	@Autowired
+	private ProjectMemberRepository projectMemberRepository;
+
+	@Autowired
+	private ProjectRepository projectRepository;
+
+	@Test
+	void creatingAProjectMakesTheCreatorItsLead() throws Exception {
+		String ownerToken = registerAndGetToken("owner1@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme1");
+
+		MvcResult result = mockMvc.perform(post("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new CreateProjectRequest("eng", "Engine"))))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.key").value("ENG"))
+				.andExpect(jsonPath("$.version").value(0))
+				.andReturn();
+
+		UUID projectId = UUID.fromString(
+				objectMapper.readTree(result.getResponse().getContentAsString()).get("id").stringValue());
+		User owner = userRepository.findByEmail("owner1@acme.test").orElseThrow();
+
+		assertEquals(ProjectMemberRole.LEAD,
+				projectMemberRepository.findByProject_IdAndUser_Id(projectId, owner.getId()).orElseThrow().getRole());
+	}
+
+	@Test
+	void duplicateProjectKeyInSameOrgIsRejectedRegardlessOfCasing() throws Exception {
+		String ownerToken = registerAndGetToken("owner2@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme2");
+
+		mockMvc.perform(post("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new CreateProjectRequest("ENG", "Engine"))))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(post("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new CreateProjectRequest("eng", "Engine Again"))))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.errorCode").value(PROJECT_KEY_IN_USE.code()));
+	}
+
+	@Test
+	void memberCannotCreateAProject() throws Exception {
+		String ownerToken = registerAndGetToken("owner3@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme3");
+		String memberToken = addMemberAndGetToken(orgId, "member3@acme.test", MembershipRole.MEMBER);
+
+		mockMvc.perform(post("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + memberToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new CreateProjectRequest("eng", "Engine"))))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void anyOrgMemberCanListAndReadProjects() throws Exception {
+		String ownerToken = registerAndGetToken("owner4@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme4");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+		String memberToken = addMemberAndGetToken(orgId, "member4@acme.test", MembershipRole.MEMBER);
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + memberToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(1)));
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/projects/" + projectId)
+						.header("Authorization", "Bearer " + memberToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.key").value("ENG"));
+	}
+
+	@Test
+	void projectLeadCanUpdateEvenWithoutOrgAdminRole() throws Exception {
+		String ownerToken = registerAndGetToken("owner5@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme5");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+		String memberToken = addMemberAndGetToken(orgId, "member5@acme.test", MembershipRole.MEMBER);
+		User member = userRepository.findByEmail("member5@acme.test").orElseThrow();
+		projectMemberRepository.saveAndFlush(new ProjectMember(
+				projectRepositoryFindOrThrow(projectId), member, ProjectMemberRole.LEAD));
+
+		mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/projects/" + projectId)
+						.header("Authorization", "Bearer " + memberToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new UpdateProjectRequest("Renamed", 0L))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Renamed"))
+				.andExpect(jsonPath("$.version").value(1));
+	}
+
+	@Test
+	void memberWithoutLeadRoleCannotUpdateProject() throws Exception {
+		String ownerToken = registerAndGetToken("owner6@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme6");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+		String memberToken = addMemberAndGetToken(orgId, "member6@acme.test", MembershipRole.MEMBER);
+
+		mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/projects/" + projectId)
+						.header("Authorization", "Bearer " + memberToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new UpdateProjectRequest("Renamed", 0L))))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void updatingWithAStaleVersionIsRejected() throws Exception {
+		String ownerToken = registerAndGetToken("owner7@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme7");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+
+		mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/projects/" + projectId)
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new UpdateProjectRequest("First Rename", 0L))))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/projects/" + projectId)
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new UpdateProjectRequest("Stale Rename", 0L))))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.errorCode").value(STALE_PROJECT_VERSION.code()));
+	}
+
+	@Test
+	void nonMemberCannotAccessProjectsAtAll() throws Exception {
+		String ownerToken = registerAndGetToken("owner8@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme8");
+		String outsiderToken = registerAndGetToken("outsider8@acme.test");
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + outsiderToken))
+				.andExpect(status().isForbidden());
+	}
+
+	private Project projectRepositoryFindOrThrow(UUID projectId) {
+		return projectRepository.findById(projectId).orElseThrow();
+	}
+
+	private UUID createProject(UUID orgId, String token, String key, String name) throws Exception {
+		MvcResult result = mockMvc.perform(post("/api/v1/organizations/" + orgId + "/projects")
+						.header("Authorization", "Bearer " + token)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new CreateProjectRequest(key, name))))
+				.andExpect(status().isCreated())
+				.andReturn();
+
+		return UUID.fromString(
+				objectMapper.readTree(result.getResponse().getContentAsString()).get("id").stringValue());
+	}
+
+	private String addMemberAndGetToken(UUID organizationId, String email, MembershipRole role) throws Exception {
+		String token = registerAndGetToken(email);
+		User user = userRepository.findByEmail(email).orElseThrow();
+		Organization organization = organizationRepository.findById(organizationId).orElseThrow();
+		membershipRepository.saveAndFlush(new Membership(organization, user, role));
+		return token;
+	}
+
+	private UUID createOrganization(String token, String name) throws Exception {
+		MvcResult result = mockMvc.perform(post("/api/v1/organizations")
+						.header("Authorization", "Bearer " + token)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new CreateOrganizationRequest(name))))
+				.andExpect(status().isCreated())
+				.andReturn();
+
+		return UUID.fromString(
+				objectMapper.readTree(result.getResponse().getContentAsString()).get("id").stringValue());
+	}
+
+	private String registerAndGetToken(String email) throws Exception {
+		MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(new RegisterRequest(email, "supersecret", "Name"))))
+				.andExpect(status().isCreated())
+				.andReturn();
+
+		return objectMapper.readTree(result.getResponse().getContentAsString()).get("accessToken").stringValue();
+	}
+
+}

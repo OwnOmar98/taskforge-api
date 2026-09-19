@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
@@ -49,6 +50,16 @@ public class GlobalExceptionHandler {
 		// don't undo that by branching on exception subtype here.
 		return problemDetail(HttpStatus.UNAUTHORIZED, AuthErrorCode.INVALID_CREDENTIALS,
 				AuthErrorCode.INVALID_CREDENTIALS.defaultMessage());
+	}
+
+	// Backstop for the genuine race the manual version check in ProjectService
+	// doesn't cover: a concurrent write slipping in between that check and this
+	// flush. Hibernate's own @Version-driven UPDATE...WHERE clause still
+	// catches that at the DB level and throws this.
+	@ExceptionHandler(OptimisticLockingFailureException.class)
+	public ProblemDetail handleOptimisticLocking(OptimisticLockingFailureException ex) {
+		return problemDetail(HttpStatus.CONFLICT, GeneralErrorCode.RESOURCE_CONFLICT,
+				GeneralErrorCode.RESOURCE_CONFLICT.defaultMessage());
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
