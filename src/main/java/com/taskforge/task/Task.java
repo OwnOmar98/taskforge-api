@@ -29,6 +29,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.taskforge.media.Media;
 import com.taskforge.project.Project;
 import com.taskforge.user.User;
 
@@ -87,6 +88,15 @@ public class Task {
 	@JoinTable(name = "task_labels", joinColumns = @JoinColumn(name = "task_id"),
 			inverseJoinColumns = @JoinColumn(name = "label_id"))
 	private Set<Label> labels = new HashSet<>();
+
+	// Owned lifecycle, same reasoning as comments: an attachment is only ever
+	// linked to the one task that uploaded it today, so deleting the task
+	// deletes the Media row too. This does NOT delete the underlying object in
+	// storage - that cleanup isn't built yet, a known gap.
+	@OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+	@JoinTable(name = "task_attachments", joinColumns = @JoinColumn(name = "task_id"),
+			inverseJoinColumns = @JoinColumn(name = "media_id"))
+	private List<Media> attachments = new ArrayList<>();
 
 	public Task(Project project, String title, String description, TaskPriority priority, LocalDate dueDate) {
 		this.project = project;

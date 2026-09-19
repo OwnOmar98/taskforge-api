@@ -10,3 +10,10 @@ spring:
 app:
   jwt:
     secret: ${APP_JWT_SECRET}
+  storage:
+    endpoint: ${DO_SPACES_ENDPOINT}
+    region: ${DO_SPACES_REGION}
+    bucket: ${DO_SPACES_BUCKET}
+    access-key: ${DO_SPACES_KEY}
+    secret-key: ${DO_SPACES_SECRET}
+    force-path-style: false
