@@ -13,6 +13,10 @@ import com.taskforge.project.Project;
 import com.taskforge.project.ProjectMemberRepository;
 import com.taskforge.project.ProjectMemberRole;
 import com.taskforge.project.ProjectRepository;
+import com.taskforge.task.Task;
+import com.taskforge.task.TaskComment;
+import com.taskforge.task.TaskCommentRepository;
+import com.taskforge.task.TaskRepository;
 
 @Component
 public class TaskForgePermissionEvaluator implements PermissionEvaluator {
@@ -20,12 +24,17 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 	private final MembershipRepository membershipRepository;
 	private final ProjectRepository projectRepository;
 	private final ProjectMemberRepository projectMemberRepository;
+	private final TaskRepository taskRepository;
+	private final TaskCommentRepository taskCommentRepository;
 
 	public TaskForgePermissionEvaluator(MembershipRepository membershipRepository,
-			ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository) {
+			ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository,
+			TaskRepository taskRepository, TaskCommentRepository taskCommentRepository) {
 		this.membershipRepository = membershipRepository;
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
+		this.taskRepository = taskRepository;
+		this.taskCommentRepository = taskCommentRepository;
 	}
 
 	@Override
@@ -64,7 +73,56 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 			return projectMemberRepository.findByProject_IdAndUser_Id(projectId, userId).isPresent();
 		}
 
+		// Same "resolve up to the owning scope, then check membership there"
+		// shape as canManageProject - comments/labels are addressed by taskId
+		// alone, so this walks task -> project before it can check anything.
+		if ("Task".equals(targetType) && "MEMBER".equals(permission)) {
+			UUID taskId = UUID.fromString(targetId.toString());
+			return canAccessTask(userId, taskId);
+		}
+
+		// Deleting a comment is allowed for its own author, or as a moderation
+		// action by anyone who could already MANAGE the project - no separate
+		// "comment moderator" role, just the same composite rule reused.
+		if ("TaskComment".equals(targetType) && "DELETE".equals(permission)) {
+			UUID commentId = UUID.fromString(targetId.toString());
+			return canDeleteComment(userId, commentId);
+		}
+
 		return false;
+	}
+
+	private boolean canDeleteComment(UUID userId, UUID commentId) {
+		TaskComment comment = taskCommentRepository.findById(commentId).orElse(null);
+		if (comment == null) {
+			return false;
+		}
+
+		if (comment.getAuthor().getId().equals(userId)) {
+			return true;
+		}
+
+		// comment.getTask() is a lazy proxy - .getId() on it is safe (Hibernate
+		// resolves that from the FK column alone), but .getProject() on that same
+		// proxy would need a real field and therefore a session, which doesn't
+		// exist yet here (@PreAuthorize runs before @Transactional opens one).
+		// Re-fetching gives a real entity whose own lazy .getProject().getId()
+		// is the same safe id-only access canManageProject already relies on.
+		Task task = taskRepository.findById(comment.getTask().getId()).orElse(null);
+		if (task == null) {
+			return false;
+		}
+
+		return canManageProject(userId, task.getProject().getId());
+	}
+
+	private boolean canAccessTask(UUID userId, UUID taskId) {
+		Task task = taskRepository.findById(taskId).orElse(null);
+		if (task == null) {
+			return false;
+		}
+
+		return projectMemberRepository.findByProject_IdAndUser_Id(task.getProject().getId(), userId).isPresent();
 	}
 
 	private boolean canManageProject(UUID userId, UUID projectId) {
