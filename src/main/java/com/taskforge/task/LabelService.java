@@ -1,0 +1,84 @@
+package com.taskforge.task;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.taskforge.common.exception.ConflictException;
+import com.taskforge.common.exception.GeneralErrorCode;
+import com.taskforge.common.exception.ResourceNotFoundException;
+import com.taskforge.organization.Organization;
+import com.taskforge.organization.OrganizationRepository;
+import com.taskforge.task.dto.LabelResponse;
+
+@Service
+public class LabelService {
+
+	private final LabelRepository labelRepository;
+	private final OrganizationRepository organizationRepository;
+	private final TaskRepository taskRepository;
+
+	public LabelService(LabelRepository labelRepository, OrganizationRepository organizationRepository,
+			TaskRepository taskRepository) {
+		this.labelRepository = labelRepository;
+		this.organizationRepository = organizationRepository;
+		this.taskRepository = taskRepository;
+	}
+
+	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
+	@Transactional
+	public LabelResponse createLabel(UUID organizationId, String name) {
+		if (labelRepository.existsByOrganization_IdAndName(organizationId, name)) {
+			throw new ConflictException(LabelErrorCode.LABEL_NAME_IN_USE,
+					LabelErrorCode.LABEL_NAME_IN_USE.defaultMessage());
+		}
+
+		Organization organization = organizationRepository.findById(organizationId)
+				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
+						"Organization not found"));
+
+		return toResponse(labelRepository.save(new Label(organization, name)));
+	}
+
+	// No @PreAuthorize: TenantInterceptor already requires org membership for
+	// any {orgId} route, and seeing the shared label set isn't privileged.
+	@Transactional(readOnly = true)
+	public List<LabelResponse> listLabels(UUID organizationId) {
+		return labelRepository.findByOrganization_Id(organizationId).stream().map(this::toResponse).toList();
+	}
+
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@Transactional
+	public void attachLabel(UUID taskId, UUID labelId) {
+		Task task = findTaskOrThrow(taskId);
+		UUID organizationId = task.getProject().getOrganization().getId();
+
+		Label label = labelRepository.findByIdAndOrganization_Id(labelId, organizationId)
+				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
+						"Label not found"));
+
+		task.getLabels().add(label);
+	}
+
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@Transactional
+	public void detachLabel(UUID taskId, UUID labelId) {
+		Task task = findTaskOrThrow(taskId);
+		task.getLabels().removeIf(label -> label.getId().equals(labelId));
+	}
+
+	private Task findTaskOrThrow(UUID taskId) {
+		return taskRepository.findById(taskId)
+				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
+						"Task not found"));
+	}
+
+	private LabelResponse toResponse(Label label) {
+		return new LabelResponse(label.getId(), label.getOrganization().getId(), label.getName(),
+				label.getCreatedAt());
+	}
+
+}
