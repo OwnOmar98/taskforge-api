@@ -15,3 +15,13 @@ app:
     ttl: 30d
   invitation:
     ttl: 7d
+  storage:
+    presigned-url-ttl: 10m
+    max-file-size-bytes: 20971520 # 20MB
+    allowed-content-types:
+      - image/png
+      - image/jpeg
+      - image/gif
+      - application/pdf
+      - text/plain
+      - application/zip

@@ -5,3 +5,11 @@
 app:
   jwt:
     secret: test-only-jwt-signing-secret-0123456789-0123456789
+  # endpoint is deliberately absent here - the MinIO Testcontainer's mapped
+  # port is only known at runtime, so tests inject it via @DynamicPropertySource.
+  storage:
+    region: us-east-1
+    bucket: taskforge-test
+    access-key: minioadmin
+    secret-key: minioadmin
+    force-path-style: true

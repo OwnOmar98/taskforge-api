@@ -14,3 +14,12 @@ logging:
 app:
   jwt:
     secret: dev-only-jwt-signing-secret-do-not-use-in-prod-0123456789
+  storage:
+    # Real DO Spaces, but a dev-only bucket and a dev-scoped key/secret - never
+    # the prod deploy credential.
+    endpoint: ${DO_SPACES_ENDPOINT}
+    region: ${DO_SPACES_REGION}
+    bucket: ${DO_SPACES_BUCKET}
+    access-key: ${DO_SPACES_KEY}
+    secret-key: ${DO_SPACES_SECRET}
+    force-path-style: false

@@ -32,6 +32,11 @@ public class GlobalExceptionHandler {
 		return problemDetail(HttpStatus.CONFLICT, ex.getErrorCode(), ex.getMessage());
 	}
 
+	@ExceptionHandler(BadRequestException.class)
+	public ProblemDetail handleBadRequest(BadRequestException ex) {
+		return problemDetail(HttpStatus.BAD_REQUEST, ex.getErrorCode(), ex.getMessage());
+	}
+
 	@ExceptionHandler(UnauthorizedException.class)
 	public ProblemDetail handleUnauthorized(UnauthorizedException ex) {
 		return problemDetail(HttpStatus.UNAUTHORIZED, ex.getErrorCode(), ex.getMessage());
