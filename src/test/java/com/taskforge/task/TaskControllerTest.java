@@ -86,7 +86,8 @@ class TaskControllerTest {
 		mockMvc.perform(get("/api/v1/projects/" + projectId + "/tasks")
 						.header("Authorization", "Bearer " + ownerToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(1)));
+				.andExpect(jsonPath("$.content", hasSize(1)))
+				.andExpect(jsonPath("$.totalElements").value(1));
 
 		mockMvc.perform(get("/api/v1/projects/" + projectId + "/tasks/" + taskId)
 						.header("Authorization", "Bearer " + ownerToken))
