@@ -2,6 +2,12 @@
 # via Testcontainers + @ServiceConnection, which injects connection details
 # at runtime. ddl-auto/flyway settings are inherited from application.yml.
 
+spring:
+  jpa:
+    properties:
+      hibernate:
+        generate_statistics: true
+
 app:
   jwt:
     secret: test-only-jwt-signing-secret-0123456789-0123456789

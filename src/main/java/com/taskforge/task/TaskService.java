@@ -1,13 +1,20 @@
 package com.taskforge.task;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
@@ -15,6 +22,7 @@ import com.taskforge.project.Project;
 import com.taskforge.project.ProjectMemberRepository;
 import com.taskforge.project.ProjectRepository;
 import com.taskforge.task.dto.TaskResponse;
+import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.task.dto.UpdateTaskRequest;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
@@ -54,10 +62,35 @@ public class TaskService {
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
 	@Transactional(readOnly = true)
-	public List<TaskResponse> listTasks(UUID projectId) {
-		return taskRepository.findByProjectIdWithAssignee(projectId).stream()
-				.map(task -> toResponse(task, projectId))
-				.toList();
+	public PageResponse<TaskSummaryProjection> listTasks(UUID projectId, TaskStatus status, TaskPriority priority,
+			UUID assigneeId, UUID labelId, Pageable pageable) {
+		List<Specification<Task>> specs = new ArrayList<>();
+		specs.add(TaskSpecifications.belongsToProject(projectId));
+		if (status != null) {
+			specs.add(TaskSpecifications.hasStatus(status));
+		}
+		if (priority != null) {
+			specs.add(TaskSpecifications.hasPriority(priority));
+		}
+		if (assigneeId != null) {
+			specs.add(TaskSpecifications.hasAssignee(assigneeId));
+		}
+		if (labelId != null) {
+			specs.add(TaskSpecifications.hasLabel(labelId));
+		}
+
+		Page<Task> page = taskRepository.findAll(Specification.allOf(specs), pageable);
+
+		List<UUID> taskIds = page.getContent().stream().map(Task::getId).toList();
+		// An empty IN clause is invalid JPQL, and an empty page is common (e.g. no
+		// results for the given filters), so skip the query entirely in that case.
+		Map<UUID, List<String>> labelNamesByTaskId = taskIds.isEmpty() ? Map.of()
+				: taskRepository.findLabelNamesForTasks(taskIds).stream()
+						.collect(Collectors.groupingBy(TaskRepository.TaskLabelRow::getTaskId,
+								Collectors.mapping(TaskRepository.TaskLabelRow::getLabelName, Collectors.toList())));
+
+		return PageResponse
+				.from(page.map(task -> toSummary(task, labelNamesByTaskId.getOrDefault(task.getId(), List.of()))));
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
@@ -137,6 +170,13 @@ public class TaskService {
 		return new TaskResponse(task.getId(), projectId, task.getTitle(), task.getDescription(), task.getStatus(),
 				task.getPriority(), task.getDueDate(), assignee == null ? null : assignee.getId(),
 				assignee == null ? null : assignee.getEmail(), task.getVersion(), task.getCreatedAt());
+	}
+
+	private TaskSummaryProjection toSummary(Task task, List<String> labelNames) {
+		User assignee = task.getAssignee();
+		return new TaskSummaryProjection(task.getId(), task.getTitle(), task.getStatus(), task.getPriority(),
+				task.getDueDate(), assignee == null ? null : assignee.getId(),
+				assignee == null ? null : assignee.getEmail(), labelNames.stream().sorted().toList());
 	}
 
 }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.organization.Membership;
 import com.taskforge.organization.MembershipRepository;
@@ -28,6 +30,7 @@ import com.taskforge.project.ProjectMemberRepository;
 import com.taskforge.project.ProjectMemberRole;
 import com.taskforge.project.ProjectRepository;
 import com.taskforge.task.dto.TaskResponse;
+import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
@@ -121,9 +124,10 @@ class TaskServiceTest {
 		User viewer = createProjectMember(project, ProjectMemberRole.VIEWER);
 
 		authenticateAs(viewer);
-		List<TaskResponse> tasks = taskService.listTasks(project.getId());
+		PageResponse<TaskSummaryProjection> tasks = taskService.listTasks(project.getId(), null, null, null, null,
+				PageRequest.of(0, 20));
 
-		assertEquals(0, tasks.size());
+		assertEquals(0, tasks.content().size());
 	}
 
 	private Project createProject() {

@@ -1,11 +1,13 @@
 package com.taskforge.task;
 
-import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,8 +16,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.task.dto.CreateTaskRequest;
+import com.taskforge.task.dto.TaskFilter;
 import com.taskforge.task.dto.TaskResponse;
+import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.task.dto.UpdateTaskRequest;
 
 import jakarta.validation.Valid;
@@ -38,8 +43,10 @@ public class TaskController {
 	}
 
 	@GetMapping
-	public List<TaskResponse> list(@PathVariable UUID projectId) {
-		return taskService.listTasks(projectId);
+	public PageResponse<TaskSummaryProjection> list(@PathVariable UUID projectId, @ModelAttribute TaskFilter filter,
+			@PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
+		return taskService.listTasks(projectId, filter.status(), filter.priority(), filter.assigneeId(),
+				filter.labelId(), pageable);
 	}
 
 	@GetMapping("/{taskId}")
