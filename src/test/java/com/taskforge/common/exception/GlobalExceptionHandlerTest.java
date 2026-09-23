@@ -82,4 +82,14 @@ class GlobalExceptionHandlerTest {
 				.andExpect(jsonPath("$.errorCode").value(INSUFFICIENT_PERMISSIONS.code()));
 	}
 
+	// Without a dedicated handler, Spring MVC's NoResourceFoundException for an
+	// unmatched route would fall through to the catch-all Exception handler and
+	// get misreported as a 500 instead of a 404.
+	@Test
+	void noMatchingRoute_returns404ProblemDetail() throws Exception {
+		mockMvc.perform(get("/test/this-route-does-not-exist"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.errorCode").value(RESOURCE_NOT_FOUND.code()));
+	}
+
 }

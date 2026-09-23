@@ -14,6 +14,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.taskforge.auth.AuthErrorCode;
 
@@ -25,6 +26,15 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(ResourceNotFoundException.class)
 	public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
 		return problemDetail(HttpStatus.NOT_FOUND, ex.getErrorCode(), ex.getMessage());
+	}
+
+	// Spring MVC throws this for a request with no matching route at all -
+	// without this, it would fall through to the catch-all Exception handler
+	// below and be misreported as a 500 instead of a 404.
+	@ExceptionHandler(NoResourceFoundException.class)
+	public ProblemDetail handleNoResourceFound(NoResourceFoundException ex) {
+		return problemDetail(HttpStatus.NOT_FOUND, GeneralErrorCode.RESOURCE_NOT_FOUND,
+				GeneralErrorCode.RESOURCE_NOT_FOUND.defaultMessage());
 	}
 
 	@ExceptionHandler(ConflictException.class)
