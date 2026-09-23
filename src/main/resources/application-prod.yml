@@ -1,3 +1,12 @@
+logging:
+  structured:
+    format:
+      # JSON logs for log-aggregation tooling in prod; dev/test keep the
+      # default human-readable console format, which is easier to read while
+      # actively working. MDC entries (correlationId included) are included
+      # automatically under the format's context fields.
+      console: ecs
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:taskforge}
