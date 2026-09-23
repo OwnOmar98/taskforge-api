@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.taskforge.organization.dto.ChangeRoleRequest;
 import com.taskforge.organization.dto.MemberResponse;
+import com.taskforge.security.CurrentUserId;
 
 import jakarta.validation.Valid;
 
@@ -35,8 +36,8 @@ public class MembershipController {
 
 	@PatchMapping("/{userId}")
 	public MemberResponse changeRole(@PathVariable UUID orgId, @PathVariable UUID userId,
-			@Valid @RequestBody ChangeRoleRequest request) {
-		return membershipService.changeRole(orgId, userId, request.role());
+			@Valid @RequestBody ChangeRoleRequest request, @CurrentUserId UUID currentUserId) {
+		return membershipService.changeRole(orgId, userId, request.role(), currentUserId);
 	}
 
 	@DeleteMapping("/{userId}")

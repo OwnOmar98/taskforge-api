@@ -1,6 +1,5 @@
 package com.taskforge.project;
 
-import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -12,20 +11,20 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.taskforge.common.Auditable;
 import com.taskforge.organization.Organization;
 
 @Entity
 @Table(name = "projects")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Project {
+public class Project extends Auditable {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
@@ -45,20 +44,12 @@ public class Project {
 	@Column(nullable = false)
 	private Long version;
 
-	@Column(name = "created_at", nullable = false, updatable = false)
-	private Instant createdAt;
-
 	public Project(Organization organization, String key, String name) {
 		this.organization = organization;
 		// Same lesson as EmailNormalizer: a case-variant key ("eng" vs "ENG")
 		// must collide with the existing one, not slip past the uniqueness check.
 		this.key = key == null ? null : key.strip().toUpperCase(Locale.ROOT);
 		this.name = name;
-	}
-
-	@PrePersist
-	void onCreate() {
-		this.createdAt = Instant.now();
 	}
 
 	public void rename(String newName) {
