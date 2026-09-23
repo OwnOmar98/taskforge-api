@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.taskforge.common.PageResponse;
+import com.taskforge.security.CurrentUserId;
 import com.taskforge.task.dto.CreateTaskRequest;
 import com.taskforge.task.dto.TaskFilter;
 import com.taskforge.task.dto.TaskResponse;
@@ -56,8 +57,8 @@ public class TaskController {
 
 	@PatchMapping("/{taskId}")
 	public TaskResponse update(@PathVariable UUID projectId, @PathVariable UUID taskId,
-			@Valid @RequestBody UpdateTaskRequest request) {
-		return taskService.updateTask(projectId, taskId, request);
+			@Valid @RequestBody UpdateTaskRequest request, @CurrentUserId UUID currentUserId) {
+		return taskService.updateTask(projectId, taskId, request, currentUserId);
 	}
 
 	@DeleteMapping("/{taskId}")

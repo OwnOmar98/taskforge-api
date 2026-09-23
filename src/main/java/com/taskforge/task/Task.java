@@ -1,6 +1,5 @@
 package com.taskforge.task;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,13 +21,13 @@ import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import com.taskforge.common.Auditable;
 import com.taskforge.media.Media;
 import com.taskforge.project.Project;
 import com.taskforge.user.User;
@@ -37,7 +36,7 @@ import com.taskforge.user.User;
 @Table(name = "tasks")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Task {
+public class Task extends Auditable {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
@@ -72,9 +71,6 @@ public class Task {
 	@Column(nullable = false)
 	private Long version;
 
-	@Column(name = "created_at", nullable = false, updatable = false)
-	private Instant createdAt;
-
 	// Owned lifecycle: a comment has no existence apart from its task, so
 	// deleting the task deletes its comments, and removing one from this list
 	// deletes it outright (orphanRemoval) rather than leaving a dangling row.
@@ -105,11 +101,6 @@ public class Task {
 		this.status = TaskStatus.TODO;
 		this.priority = priority;
 		this.dueDate = dueDate;
-	}
-
-	@PrePersist
-	void onCreate() {
-		this.createdAt = Instant.now();
 	}
 
 	public void rename(String newTitle) {

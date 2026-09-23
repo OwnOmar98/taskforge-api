@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -14,6 +15,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.audit.events.TaskStatusChangedEvent;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
@@ -34,13 +36,16 @@ public class TaskService {
 	private final ProjectRepository projectRepository;
 	private final ProjectMemberRepository projectMemberRepository;
 	private final UserRepository userRepository;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public TaskService(TaskRepository taskRepository, ProjectRepository projectRepository,
-			ProjectMemberRepository projectMemberRepository, UserRepository userRepository) {
+			ProjectMemberRepository projectMemberRepository, UserRepository userRepository,
+			ApplicationEventPublisher eventPublisher) {
 		this.taskRepository = taskRepository;
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
 		this.userRepository = userRepository;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
@@ -101,7 +106,7 @@ public class TaskService {
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
 	@Transactional
-	public TaskResponse updateTask(UUID projectId, UUID taskId, UpdateTaskRequest request) {
+	public TaskResponse updateTask(UUID projectId, UUID taskId, UpdateTaskRequest request, UUID actorId) {
 		Task task = findTaskInProjectOrThrow(projectId, taskId);
 
 		if (!task.getVersion().equals(request.version())) {
@@ -115,8 +120,11 @@ public class TaskService {
 		if (request.description() != null) {
 			task.updateDescription(request.description());
 		}
-		if (request.status() != null) {
+		if (request.status() != null && request.status() != task.getStatus()) {
+			TaskStatus oldStatus = task.getStatus();
 			task.changeStatus(request.status());
+			eventPublisher.publishEvent(new TaskStatusChangedEvent(task.getProject().getOrganization().getId(),
+					actorId, task.getId(), oldStatus, request.status()));
 		}
 		if (request.priority() != null) {
 			task.changePriority(request.priority());
