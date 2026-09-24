@@ -12,6 +12,7 @@ import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
 import com.taskforge.media.Media;
 import com.taskforge.media.MediaErrorCode;
+import com.taskforge.media.MediaRepository;
 import com.taskforge.media.MediaService;
 import com.taskforge.media.PresignedUploadTicket;
 import com.taskforge.storage.MediaVisibility;
@@ -27,12 +28,14 @@ public class TaskAttachmentService {
 
 	private final TaskRepository taskRepository;
 	private final MediaService mediaService;
+	private final MediaRepository mediaRepository;
 	private final UserRepository userRepository;
 
 	public TaskAttachmentService(TaskRepository taskRepository, MediaService mediaService,
-			UserRepository userRepository) {
+			MediaRepository mediaRepository, UserRepository userRepository) {
 		this.taskRepository = taskRepository;
 		this.mediaService = mediaService;
+		this.mediaRepository = mediaRepository;
 		this.userRepository = userRepository;
 	}
 
@@ -43,8 +46,16 @@ public class TaskAttachmentService {
 		Task task = findTaskOrThrow(taskId);
 		User uploadedBy = userRepository.findById(uploadedById).orElseThrow();
 
+		// mediaService.upload() runs in its own REQUIRES_NEW transaction and
+		// returns an already-committed but now-detached Media. Adding a detached
+		// entity straight into a cascade=ALL collection makes Hibernate try to
+		// cascade-persist it as if it were new, which fails since it already
+		// has an id. Re-fetching a reference attached to THIS session fixes
+		// that without an extra round trip - getReferenceById is a lazy proxy,
+		// not a real query.
 		Media media = mediaService.upload("tasks/" + taskId, file, visibility, uploadedBy);
-		task.getAttachments().add(media);
+		Media managedMedia = mediaRepository.getReferenceById(media.getId());
+		task.getAttachments().add(managedMedia);
 
 		return toResponse(media);
 	}

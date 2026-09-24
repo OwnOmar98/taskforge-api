@@ -20,6 +20,10 @@ public class RefreshTokenService {
 		this.properties = properties;
 	}
 
+	// Only a single save, so this is already atomic without an explicit
+	// boundary - annotated anyway so every public method here states its
+	// transactional intent explicitly rather than by omission.
+	@Transactional
 	public String issue(User user) {
 		return issueNew(user).rawValue();
 	}

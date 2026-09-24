@@ -7,6 +7,8 @@ import java.net.URL;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.taskforge.common.exception.BadRequestException;
@@ -35,6 +37,16 @@ public class MediaService {
 	// keyPrefix scopes the storage key to whatever feature is uploading (e.g.
 	// "tasks/{taskId}") purely for readability in the bucket - Media itself
 	// stores no reference back to that owner.
+	//
+	// REQUIRES_NEW, not the default: the S3 write below is irreversible the
+	// instant it succeeds, but without this the Media row would only join
+	// whatever transaction the caller happens to be in. If that caller's
+	// transaction later fails for an unrelated reason, its rollback would
+	// erase this row too - leaving the real, already-uploaded S3 object with
+	// no DB record at all. Committing this in its own transaction means the
+	// row is durably saved the moment this method returns, independent of
+	// whatever the caller does next.
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public Media upload(String keyPrefix, MultipartFile file, MediaVisibility visibility, User uploadedBy) {
 		if (file.isEmpty()) {
 			throw new BadRequestException(MediaErrorCode.EMPTY_FILE, MediaErrorCode.EMPTY_FILE.defaultMessage());
@@ -72,6 +84,12 @@ public class MediaService {
 	// Client-direct upload, step 2: verify the object actually exists in
 	// storage and use ITS reported content-type/size, not whatever the client
 	// claims here - this is the check himam-nest's equivalent flow skips.
+	//
+	// Deliberately NOT REQUIRES_NEW like upload() above: headObject() is a
+	// read, not a write, so there's no irreversible external side effect here
+	// to protect. The client already uploaded the object directly, independent
+	// of this method entirely - if this transaction rolls back, the object is
+	// still sitting in storage exactly as before, safe to confirm again later.
 	public Media confirmPresignedUpload(String storageKey, String filename, MediaVisibility visibility,
 			User uploadedBy) {
 		StoredObjectMetadata actual = storageService.headObject(storageKey)
