@@ -78,7 +78,7 @@ class TaskServiceTest {
 
 		authenticateAs(lead);
 		TaskResponse task = taskService.createTask(project.getId(), "Ship it", null, TaskPriority.HIGH, null,
-				contributor.getId());
+				contributor.getId(), lead.getId());
 
 		assertEquals(contributor.getId(), task.assigneeId());
 	}
@@ -92,7 +92,7 @@ class TaskServiceTest {
 		authenticateAs(lead);
 
 		assertThrows(ConflictException.class, () -> taskService.createTask(project.getId(), "Ship it", null,
-				TaskPriority.HIGH, null, outsider.getId()));
+				TaskPriority.HIGH, null, outsider.getId(), lead.getId()));
 	}
 
 	@Test
@@ -102,7 +102,7 @@ class TaskServiceTest {
 
 		authenticateAs(lead);
 		TaskResponse task = taskService.createTask(project.getId(), "Unassigned work", null, TaskPriority.LOW, null,
-				null);
+				null, lead.getId());
 
 		assertNull(task.assigneeId());
 	}
@@ -115,7 +115,7 @@ class TaskServiceTest {
 		authenticateAs(outsider);
 
 		assertThrows(AccessDeniedException.class, () -> taskService.createTask(project.getId(), "Ship it", null,
-				TaskPriority.HIGH, null, null));
+				TaskPriority.HIGH, null, null, outsider.getId()));
 	}
 
 	@Test

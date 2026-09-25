@@ -26,6 +26,7 @@ import com.taskforge.project.ProjectRepository;
 import com.taskforge.task.dto.TaskResponse;
 import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.task.dto.UpdateTaskRequest;
+import com.taskforge.task.events.TaskAssignedEvent;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
@@ -51,7 +52,7 @@ public class TaskService {
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
 	@Transactional
 	public TaskResponse createTask(UUID projectId, String title, String description, TaskPriority priority,
-			LocalDate dueDate, UUID assigneeId) {
+			LocalDate dueDate, UUID assigneeId, UUID actorId) {
 		Project project = projectRepository.findById(projectId)
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Project not found"));
@@ -62,7 +63,12 @@ public class TaskService {
 			task.assignTo(validateAssigneeOrThrow(projectId, assigneeId));
 		}
 
-		return toResponse(taskRepository.save(task), projectId);
+		Task saved = taskRepository.save(task);
+		if (assigneeId != null) {
+			eventPublisher.publishEvent(new TaskAssignedEvent(saved.getId(), assigneeId, actorId));
+		}
+
+		return toResponse(saved, projectId);
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
@@ -133,7 +139,11 @@ public class TaskService {
 			task.changeDueDate(request.dueDate());
 		}
 		if (request.assigneeId() != null) {
-			task.assignTo(validateAssigneeOrThrow(projectId, request.assigneeId()));
+			User previousAssignee = task.getAssignee();
+			if (previousAssignee == null || !previousAssignee.getId().equals(request.assigneeId())) {
+				task.assignTo(validateAssigneeOrThrow(projectId, request.assigneeId()));
+				eventPublisher.publishEvent(new TaskAssignedEvent(task.getId(), request.assigneeId(), actorId));
+			}
 		}
 
 		// Same reasoning as ProjectService.updateProject: force the version bump

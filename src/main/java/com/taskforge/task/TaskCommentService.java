@@ -3,6 +3,7 @@ package com.taskforge.task;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
 import com.taskforge.task.dto.TaskCommentResponse;
+import com.taskforge.task.events.TaskCommentAddedEvent;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
@@ -19,12 +21,14 @@ public class TaskCommentService {
 	private final TaskRepository taskRepository;
 	private final TaskCommentRepository taskCommentRepository;
 	private final UserRepository userRepository;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public TaskCommentService(TaskRepository taskRepository, TaskCommentRepository taskCommentRepository,
-			UserRepository userRepository) {
+			UserRepository userRepository, ApplicationEventPublisher eventPublisher) {
 		this.taskRepository = taskRepository;
 		this.taskCommentRepository = taskCommentRepository;
 		this.userRepository = userRepository;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
@@ -33,7 +37,10 @@ public class TaskCommentService {
 		Task task = findTaskOrThrow(taskId);
 		User author = userRepository.findById(authorId).orElseThrow();
 
-		return toResponse(taskCommentRepository.save(new TaskComment(task, author, body)));
+		TaskComment comment = taskCommentRepository.save(new TaskComment(task, author, body));
+		eventPublisher.publishEvent(new TaskCommentAddedEvent(taskId, comment.getId(), authorId));
+
+		return toResponse(comment);
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")

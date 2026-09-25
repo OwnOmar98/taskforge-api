@@ -38,9 +38,10 @@ public class TaskController {
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public TaskResponse create(@PathVariable UUID projectId, @Valid @RequestBody CreateTaskRequest request) {
+	public TaskResponse create(@PathVariable UUID projectId, @Valid @RequestBody CreateTaskRequest request,
+			@CurrentUserId UUID currentUserId) {
 		return taskService.createTask(projectId, request.title(), request.description(), request.priority(),
-				request.dueDate(), request.assigneeId());
+				request.dueDate(), request.assigneeId(), currentUserId);
 	}
 
 	@GetMapping
