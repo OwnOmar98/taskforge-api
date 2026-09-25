@@ -52,6 +52,9 @@ public class ProjectService {
 		User creator = userRepository.findById(creatorUserId).orElseThrow();
 		projectMemberRepository.save(new ProjectMember(project, creator, ProjectMemberRole.LEAD));
 
+		// No cache eviction needed, same reasoning as OrganizationService.
+		// createOrganization: project.getId() has never existed before this
+		// line, so no prior cache entry for this pair could exist to invalidate.
 		return toResponse(project);
 	}
 

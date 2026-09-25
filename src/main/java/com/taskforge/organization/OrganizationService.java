@@ -33,6 +33,10 @@ public class OrganizationService {
 		Organization organization = organizationRepository.save(new Organization(name, generateUniqueSlug(name)));
 		membershipRepository.save(new Membership(organization, owner, MembershipRole.OWNER));
 
+		// No cache eviction needed here, unlike InvitationService.acceptInvitation:
+		// organization.getId() is a freshly generated UUID that has never existed
+		// before this line, so there's no possible prior cache entry - positive
+		// or negative - for this (organizationId, ownerId) pair to invalidate.
 		return organization;
 	}
 

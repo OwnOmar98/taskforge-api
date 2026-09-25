@@ -26,15 +26,17 @@ public class InvitationService {
 	private final OrganizationRepository organizationRepository;
 	private final UserRepository userRepository;
 	private final InvitationProperties properties;
+	private final MembershipRoleCacheService membershipRoleCacheService;
 
 	public InvitationService(InvitationRepository invitationRepository, MembershipRepository membershipRepository,
 			OrganizationRepository organizationRepository, UserRepository userRepository,
-			InvitationProperties properties) {
+			InvitationProperties properties, MembershipRoleCacheService membershipRoleCacheService) {
 		this.invitationRepository = invitationRepository;
 		this.membershipRepository = membershipRepository;
 		this.organizationRepository = organizationRepository;
 		this.userRepository = userRepository;
 		this.properties = properties;
+		this.membershipRoleCacheService = membershipRoleCacheService;
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -100,6 +102,13 @@ public class InvitationService {
 		invitation.accept();
 		Membership membership = membershipRepository.save(
 				new Membership(invitation.getOrganization(), currentUser, invitation.getRole()));
+
+		// Unlike a brand-new organization, this org already existed, so a prior
+		// "not a member" lookup for this exact pair could already be cached -
+		// e.g. this user tried an org route before accepting and got denied.
+		// Without evicting, that stale negative result would keep denying them
+		// until it expires.
+		membershipRoleCacheService.evict(organizationId, currentUser.getId());
 
 		return new MemberResponse(currentUser.getId(), currentUser.getEmail(), currentUser.getFullName(),
 				membership.getRole());
