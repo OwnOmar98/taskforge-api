@@ -7,7 +7,7 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 
 // TTL here is a backstop, not the correctness mechanism - every write path
@@ -23,12 +23,16 @@ public class RedisCacheConfig {
 
 	@Bean
 	public RedisCacheManagerBuilderCustomizer redisCacheManagerBuilderCustomizer() {
-		// The no-arg constructor, not one built from a plain ObjectMapper: it
-		// configures default typing internally, embedding a "@class" hint in
-		// the stored JSON so a cached value deserializes back into its exact
-		// concrete type (an enum here) instead of a generic String/Map.
+		// GenericJackson2JsonRedisSerializer (Jackson 2) is deprecated for
+		// removal in this version - GenericJacksonJsonRedisSerializer (no "2")
+		// is the Jackson 3 replacement, matching the Jackson version used
+		// everywhere else in this project. enableUnsafeDefaultTyping() embeds a
+		// type hint in the stored JSON so a cached value deserializes back into
+		// its exact concrete type instead of a generic Map/String - "unsafe"
+		// here just means unrestricted-by-package, which is fine since this
+		// deserializes our own trusted cache, never attacker-controlled input.
 		RedisSerializationContext.SerializationPair<Object> jsonValues = RedisSerializationContext.SerializationPair
-				.fromSerializer(new GenericJackson2JsonRedisSerializer());
+				.fromSerializer(GenericJacksonJsonRedisSerializer.builder().enableUnsafeDefaultTyping().build());
 
 		RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
 				.entryTtl(DEFAULT_TTL)
