@@ -27,4 +27,19 @@ public class AsyncConfig {
 		return executor;
 	}
 
+	// Kept separate from notificationExecutor: webhook delivery makes real
+	// network calls to third-party endpoints we don't control, which can be
+	// slow or hang, and shouldn't be able to starve the fast, purely-local
+	// notification-creation work of threads.
+	@Bean(name = "webhookExecutor")
+	public Executor webhookExecutor() {
+		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+		executor.setCorePoolSize(2);
+		executor.setMaxPoolSize(10);
+		executor.setQueueCapacity(500);
+		executor.setThreadNamePrefix("webhook-");
+		executor.initialize();
+		return executor;
+	}
+
 }

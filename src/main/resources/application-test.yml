@@ -8,7 +8,35 @@ spring:
       hibernate:
         generate_statistics: true
 
+# Small, fast numbers so resilience tests are deterministic and quick, not
+# because production would ever want a circuit breaker this trigger-happy.
+resilience4j:
+  retry:
+    instances:
+      webhook:
+        max-attempts: 3
+        wait-duration: 10ms
+        ignore-exceptions:
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+  circuitbreaker:
+    instances:
+      webhook:
+        sliding-window-size: 2
+        minimum-number-of-calls: 2
+        failure-rate-threshold: 100
+        wait-duration-in-open-state: 5s
+        permitted-number-of-calls-in-half-open-state: 1
+  timelimiter:
+    instances:
+      webhook:
+        # 300ms turned out too tight even for real loopback calls in this
+        # environment (RestClient/connection warmup noise alone can exceed
+        # it) - real fast responses need real headroom, so the "slow"
+        # test's artificial delay is set well above this instead.
+        timeout-duration: 3s
+
 app:
+  encryption-key: QWWuqTK9UTB7di+bNrP0o0LUWB/hT4JQ1NC0BomNkEM=
   jwt:
     secret: test-only-jwt-signing-secret-0123456789-0123456789
   # endpoint is deliberately absent here - the MinIO Testcontainer's mapped
