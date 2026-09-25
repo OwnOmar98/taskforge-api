@@ -22,13 +22,16 @@ public class ProjectMemberService {
 	private final ProjectMemberRepository projectMemberRepository;
 	private final MembershipRepository membershipRepository;
 	private final UserRepository userRepository;
+	private final ProjectMemberRoleCacheService projectMemberRoleCacheService;
 
 	public ProjectMemberService(ProjectService projectService, ProjectMemberRepository projectMemberRepository,
-			MembershipRepository membershipRepository, UserRepository userRepository) {
+			MembershipRepository membershipRepository, UserRepository userRepository,
+			ProjectMemberRoleCacheService projectMemberRoleCacheService) {
 		this.projectService = projectService;
 		this.projectMemberRepository = projectMemberRepository;
 		this.membershipRepository = membershipRepository;
 		this.userRepository = userRepository;
+		this.projectMemberRoleCacheService = projectMemberRoleCacheService;
 	}
 
 	// No @PreAuthorize: TenantInterceptor already requires org membership for
@@ -60,6 +63,11 @@ public class ProjectMemberService {
 
 		User targetUser = userRepository.findById(targetUserId).orElseThrow();
 		ProjectMember member = projectMemberRepository.save(new ProjectMember(project, targetUser, role));
+
+		// Unlike a brand-new project, this one already existed, so a prior
+		// "not a member" lookup for this exact pair could already be cached.
+		projectMemberRoleCacheService.evict(projectId, targetUserId);
+
 		return toResponse(member);
 	}
 
@@ -70,6 +78,9 @@ public class ProjectMemberService {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
 		ProjectMember member = findMemberOrThrow(projectId, targetUserId);
 		member.changeRole(newRole);
+		// Mandatory, not a nice-to-have: a stale cached role surviving until TTL
+		// expiry after a demotion is a real security bug, not a performance nit.
+		projectMemberRoleCacheService.evict(projectId, targetUserId);
 		return toResponse(member);
 	}
 
@@ -78,6 +89,7 @@ public class ProjectMemberService {
 	public void removeMember(UUID organizationId, UUID projectId, UUID targetUserId) {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
 		projectMemberRepository.delete(findMemberOrThrow(projectId, targetUserId));
+		projectMemberRoleCacheService.evict(projectId, targetUserId);
 	}
 
 	private ProjectMember findMemberOrThrow(UUID projectId, UUID userId) {

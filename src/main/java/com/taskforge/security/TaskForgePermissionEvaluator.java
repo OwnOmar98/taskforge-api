@@ -7,32 +7,35 @@ import org.springframework.security.access.PermissionEvaluator;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
-import com.taskforge.organization.MembershipRepository;
 import com.taskforge.organization.MembershipRole;
+import com.taskforge.organization.MembershipRoleCacheService;
 import com.taskforge.project.Project;
-import com.taskforge.project.ProjectMemberRepository;
 import com.taskforge.project.ProjectMemberRole;
+import com.taskforge.project.ProjectMemberRoleCacheService;
 import com.taskforge.project.ProjectRepository;
 import com.taskforge.task.Task;
 import com.taskforge.task.TaskComment;
 import com.taskforge.task.TaskCommentRepository;
 import com.taskforge.task.TaskRepository;
 
+// The org/project role lookups below are the hottest path in the app - every
+// @PreAuthorize check runs one - so they go through the cached lookup
+// services rather than querying the repositories directly.
 @Component
 public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 
-	private final MembershipRepository membershipRepository;
+	private final MembershipRoleCacheService membershipRoleCacheService;
 	private final ProjectRepository projectRepository;
-	private final ProjectMemberRepository projectMemberRepository;
+	private final ProjectMemberRoleCacheService projectMemberRoleCacheService;
 	private final TaskRepository taskRepository;
 	private final TaskCommentRepository taskCommentRepository;
 
-	public TaskForgePermissionEvaluator(MembershipRepository membershipRepository,
-			ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository,
+	public TaskForgePermissionEvaluator(MembershipRoleCacheService membershipRoleCacheService,
+			ProjectRepository projectRepository, ProjectMemberRoleCacheService projectMemberRoleCacheService,
 			TaskRepository taskRepository, TaskCommentRepository taskCommentRepository) {
-		this.membershipRepository = membershipRepository;
+		this.membershipRoleCacheService = membershipRoleCacheService;
 		this.projectRepository = projectRepository;
-		this.projectMemberRepository = projectMemberRepository;
+		this.projectMemberRoleCacheService = projectMemberRoleCacheService;
 		this.taskRepository = taskRepository;
 		this.taskCommentRepository = taskCommentRepository;
 	}
@@ -50,10 +53,9 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 		if ("Organization".equals(targetType)) {
 			UUID organizationId = UUID.fromString(targetId.toString());
 			MembershipRole requiredRole = MembershipRole.valueOf(permission.toString());
+			MembershipRole actualRole = membershipRoleCacheService.findRole(organizationId, userId).role();
 
-			return membershipRepository.findByOrganization_IdAndUser_Id(organizationId, userId)
-					.map(membership -> membership.getRole().isAtLeast(requiredRole))
-					.orElse(false);
+			return actualRole != null && actualRole.isAtLeast(requiredRole);
 		}
 
 		// "MANAGE" rather than a role name: this isn't a single role-hierarchy
@@ -70,7 +72,7 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 		// task data, unlike Organization/Project routes where it's a backstop.
 		if ("Project".equals(targetType) && "MEMBER".equals(permission)) {
 			UUID projectId = UUID.fromString(targetId.toString());
-			return projectMemberRepository.findByProject_IdAndUser_Id(projectId, userId).isPresent();
+			return projectMemberRoleCacheService.findRole(projectId, userId).role() != null;
 		}
 
 		// Same "resolve up to the owning scope, then check membership there"
@@ -122,7 +124,7 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 			return false;
 		}
 
-		return projectMemberRepository.findByProject_IdAndUser_Id(task.getProject().getId(), userId).isPresent();
+		return projectMemberRoleCacheService.findRole(task.getProject().getId(), userId).role() != null;
 	}
 
 	private boolean canManageProject(UUID userId, UUID projectId) {
@@ -131,18 +133,14 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 			return false;
 		}
 
-		boolean isOrgAdmin = membershipRepository
-				.findByOrganization_IdAndUser_Id(project.getOrganization().getId(), userId)
-				.map(membership -> membership.getRole().isAtLeast(MembershipRole.ADMIN))
-				.orElse(false);
-
-		if (isOrgAdmin) {
+		MembershipRole orgRole = membershipRoleCacheService.findRole(project.getOrganization().getId(), userId)
+				.role();
+		if (orgRole != null && orgRole.isAtLeast(MembershipRole.ADMIN)) {
 			return true;
 		}
 
-		return projectMemberRepository.findByProject_IdAndUser_Id(projectId, userId)
-				.map(projectMember -> projectMember.getRole().isAtLeast(ProjectMemberRole.LEAD))
-				.orElse(false);
+		ProjectMemberRole projectRole = projectMemberRoleCacheService.findRole(projectId, userId).role();
+		return projectRole != null && projectRole.isAtLeast(ProjectMemberRole.LEAD);
 	}
 
 }

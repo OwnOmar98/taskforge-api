@@ -19,10 +19,13 @@ public class MembershipService {
 
 	private final MembershipRepository membershipRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final MembershipRoleCacheService membershipRoleCacheService;
 
-	public MembershipService(MembershipRepository membershipRepository, ApplicationEventPublisher eventPublisher) {
+	public MembershipService(MembershipRepository membershipRepository, ApplicationEventPublisher eventPublisher,
+			MembershipRoleCacheService membershipRoleCacheService) {
 		this.membershipRepository = membershipRepository;
 		this.eventPublisher = eventPublisher;
+		this.membershipRoleCacheService = membershipRoleCacheService;
 	}
 
 	// No @PreAuthorize here: TenantInterceptor already rejects non-members for
@@ -56,6 +59,9 @@ public class MembershipService {
 			eventPublisher.publishEvent(
 					new MemberRoleChangedEvent(organizationId, actorId, targetUserId, oldRole, newRole));
 		}
+		// Mandatory, not a nice-to-have: a stale cached role surviving until TTL
+		// expiry after a demotion is a real security bug, not a performance nit.
+		membershipRoleCacheService.evict(organizationId, targetUserId);
 		return toResponse(membership);
 	}
 
@@ -70,6 +76,7 @@ public class MembershipService {
 		}
 
 		membershipRepository.delete(membership);
+		membershipRoleCacheService.evict(organizationId, targetUserId);
 	}
 
 	private Membership findMembershipOrThrow(UUID organizationId, UUID userId) {
