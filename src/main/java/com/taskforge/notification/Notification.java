@@ -1,6 +1,7 @@
 package com.taskforge.notification;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -51,6 +52,11 @@ public class Notification {
 
 	@Column(name = "read_at")
 	private Instant readAt;
+
+	// Only OverdueTaskDigestJob sets this, via a native insert - mapped here
+	// so reads still populate it.
+	@Column(name = "digest_date")
+	private LocalDate digestDate;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;

@@ -1,6 +1,7 @@
 package com.taskforge.notification;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,5 +44,20 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 	List<Notification> findNextPageByUserId(@Param("userId") UUID userId,
 			@Param("cursorCreatedAt") Instant cursorCreatedAt, @Param("cursorId") UUID cursorId,
 			@Param("limit") int limit);
+
+	// ON CONFLICT DO NOTHING, not a check-then-insert in Java: a check-then-act
+	// in application code can't survive two overlapping runs of the same job
+	// (e.g. a retry after a crash) racing each other between the check and the
+	// insert. The database constraint (see the migration) is what actually
+	// makes this safe - this just tells Postgres to treat hitting it as
+	// "already sent today" rather than an error. Returns the row count (0 or
+	// 1) so the caller can tell inserted from skipped, e.g. for logging.
+	@Modifying
+	@Query(value = "insert into notifications (id, user_id, organization_id, type, payload, created_at, digest_date) "
+			+ "values (:id, :userId, :organizationId, 'OVERDUE_TASK_DIGEST', CAST(:payload AS jsonb), now(), :digestDate) "
+			+ "on conflict (user_id, organization_id, digest_date) do nothing", nativeQuery = true)
+	int insertOverdueDigestIfAbsent(@Param("id") UUID id, @Param("userId") UUID userId,
+			@Param("organizationId") UUID organizationId, @Param("payload") String payload,
+			@Param("digestDate") LocalDate digestDate);
 
 }

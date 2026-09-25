@@ -1,5 +1,6 @@
 package com.taskforge.task;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +30,13 @@ public interface TaskRepository extends JpaRepository<Task, UUID>, JpaSpecificat
 
 	@Query("select t.id as taskId, l.name as labelName from Task t join t.labels l where t.id in :taskIds")
 	List<TaskLabelRow> findLabelNamesForTasks(@Param("taskIds") Collection<UUID> taskIds);
+
+	// assignee/project/project.organization are all fetched together: the
+	// digest job groups the result by (assignee, organization), so touching
+	// either lazily per row while iterating would be exactly the N+1 this
+	// project has already had to fix once (see PR15).
+	@EntityGraph(attributePaths = { "assignee", "project", "project.organization" })
+	List<Task> findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(LocalDate date, TaskStatus status);
 
 	interface TaskLabelRow {
 
