@@ -8,7 +8,38 @@ spring:
   flyway:
     enabled: true
 
+resilience4j:
+  retry:
+    instances:
+      webhook:
+        max-attempts: 3
+        wait-duration: 500ms
+        # Retrying a call the circuit breaker already refused would just
+        # waste attempts without ever reaching the real endpoint - once it's
+        # open, that's the signal to stop, not something to retry past.
+        ignore-exceptions:
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+  circuitbreaker:
+    instances:
+      webhook:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  timelimiter:
+    instances:
+      webhook:
+        timeout-duration: 5s
+
 app:
+  # Hibernate scans every @Converter unconditionally while building JPA
+  # metadata, even in a lightweight @DataJpaTest slice that never touches an
+  # encrypted column - so EncryptedStringConverter needs some value here in
+  # every context, not just ones with a profile active. Not a real secret:
+  # every environment that actually stores encrypted data (dev/test/prod)
+  # overrides it in its own profile-specific config.
+  encryption-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
   jwt:
     access-token-ttl: 15m
   refresh-token:

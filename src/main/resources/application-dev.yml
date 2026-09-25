@@ -16,6 +16,8 @@ logging:
     org.hibernate.SQL: debug
 
 app:
+  # Dev-only AES-256 key (base64, 32 raw bytes) - never the prod key.
+  encryption-key: sMacSJunt2+gyHiZB1u2UBIaWx/nTPMrieSHUs+8bHM=
   jwt:
     secret: dev-only-jwt-signing-secret-do-not-use-in-prod-0123456789
   storage:

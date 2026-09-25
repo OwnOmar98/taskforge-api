@@ -22,6 +22,7 @@ spring:
       password: ${REDIS_PASSWORD:}
 
 app:
+  encryption-key: ${APP_ENCRYPTION_KEY}
   jwt:
     secret: ${APP_JWT_SECRET}
   storage:
