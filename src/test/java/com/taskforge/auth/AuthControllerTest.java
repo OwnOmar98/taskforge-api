@@ -15,6 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import tools.jackson.databind.ObjectMapper;
 
+import com.redis.testcontainers.RedisContainer;
 import com.taskforge.auth.dto.LoginRequest;
 import com.taskforge.auth.dto.RefreshRequest;
 import com.taskforge.auth.dto.RegisterRequest;
@@ -38,6 +39,15 @@ class AuthControllerTest {
 	@Container
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
+
+	// Login now touches Redis unconditionally (rate limiting + lockout
+	// tracking). LoginRateLimitTest and LoginLockoutTest exercise that
+	// behavior directly; this container is here so these existing tests run
+	// against the real thing too, rather than silently through the
+	// Redis-unavailable fail-open path.
+	@Container
+	@ServiceConnection
+	static RedisContainer redis = new RedisContainer("redis:7");
 
 	@Autowired
 	private MockMvc mockMvc;

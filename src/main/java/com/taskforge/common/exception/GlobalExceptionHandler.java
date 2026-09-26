@@ -18,6 +18,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.taskforge.auth.AuthErrorCode;
 
+import jakarta.servlet.http.HttpServletResponse;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -65,6 +67,19 @@ public class GlobalExceptionHandler {
 		// don't undo that by branching on exception subtype here.
 		return problemDetail(HttpStatus.UNAUTHORIZED, AuthErrorCode.INVALID_CREDENTIALS,
 				AuthErrorCode.INVALID_CREDENTIALS.defaultMessage());
+	}
+
+	@ExceptionHandler(TooManyRequestsException.class)
+	public ProblemDetail handleTooManyRequests(TooManyRequestsException ex, HttpServletResponse response) {
+		// A 429 that doesn't say when to try again forces the client to guess
+		// or poll - Retry-After (RFC 9110) is the standard way to answer that,
+		// and it's here as a real header, not just a body field, so a generic
+		// HTTP client can act on it without knowing this API's error schema.
+		response.setHeader("Retry-After", String.valueOf(ex.getRetryAfterSeconds()));
+
+		ProblemDetail problemDetail = problemDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getErrorCode(), ex.getMessage());
+		problemDetail.setProperty("retryAfterSeconds", ex.getRetryAfterSeconds());
+		return problemDetail;
 	}
 
 	// Backstop for the genuine race the manual version check in ProjectService

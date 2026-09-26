@@ -46,6 +46,21 @@ app:
     ttl: 30d
   invitation:
     ttl: 7d
+  # Per-IP, protects the /login endpoint itself from abuse regardless of
+  # which account is targeted.
+  rate-limit:
+    login:
+      max-attempts: 10
+      window: 1m
+  # Per-account, protects one target from credential stuffing distributed
+  # across many source IPs - complements, doesn't duplicate, the rate limit.
+  login-lockout:
+    max-failures: 5
+    lockout-duration: 15m
+  # No frontend origin exists for this project yet; left empty (not a
+  # wildcard) so cross-origin browser access stays denied by default.
+  cors:
+    allowed-origins: []
   storage:
     presigned-url-ttl: 10m
     max-file-size-bytes: 20971520 # 20MB

@@ -6,7 +6,8 @@ public enum GeneralErrorCode implements ErrorCode {
 	RESOURCE_NOT_FOUND("RESOURCE-001", "Resource not found"),
 	RESOURCE_CONFLICT("RESOURCE-002", "Resource conflict"),
 	INSUFFICIENT_PERMISSIONS("ACCESS-001", "You do not have permission to perform this action"),
-	SERVER_UNEXPECTED_ERROR("SERVER-001", "An unexpected error occurred");
+	SERVER_UNEXPECTED_ERROR("SERVER-001", "An unexpected error occurred"),
+	RATE_LIMIT_EXCEEDED("RATE-001", "Too many requests. Try again later.");
 
 	private final String code;
 	private final String defaultMessage;
