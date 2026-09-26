@@ -7,6 +7,14 @@ logging:
       # automatically under the format's context fields.
       console: ecs
 
+management:
+  server:
+    # A different port, not exposed by the public-facing load balancer -
+    # the real security boundary is network isolation, not the SecurityConfig
+    # permitAll rule (which still applies here but stops mattering once the
+    # port itself isn't reachable from outside).
+    port: ${MANAGEMENT_PORT:8081}
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:taskforge}

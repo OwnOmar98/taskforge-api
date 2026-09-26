@@ -24,6 +24,7 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -65,6 +66,12 @@ class WebhookSenderTest {
 	@Autowired
 	private CircuitBreakerRegistry circuitBreakerRegistry;
 
+	@Autowired
+	private WebhookDeliveryHealthIndicator webhookDeliveryHealthIndicator;
+
+	@Autowired
+	private MeterRegistry meterRegistry;
+
 	private Webhook webhook;
 
 	@BeforeEach
@@ -102,17 +109,21 @@ class WebhookSenderTest {
 		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();
 
 		wireMock.verify(2, postRequestedFor(urlEqualTo("/hook")));
+		assertEquals("UP", webhookDeliveryHealthIndicator.health().getStatus().getCode());
 	}
 
 	@Test
 	void aResponseSlowerThanTheTimeLimitIsTreatedAsAFailure() throws ExecutionException, InterruptedException {
 		wireMock.stubFor(post(urlEqualTo("/hook")).willReturn(aResponse().withStatus(200).withFixedDelay(5000)));
 
+		double countBefore = meterRegistry.counter("webhook.delivery.failures").count();
+
 		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();
 
 		assertTrue(auditLogRepository.findAll().stream()
 				.anyMatch(entry -> "WEBHOOK_DELIVERY_FAILED".equals(entry.getAction())
 						&& entry.getEntityId().equals(webhook.getId())));
+		assertEquals(countBefore + 1, meterRegistry.counter("webhook.delivery.failures").count());
 	}
 
 	@Test
@@ -129,6 +140,8 @@ class WebhookSenderTest {
 
 		wireMock.verify(2, postRequestedFor(urlEqualTo("/hook")));
 		assertEquals(CircuitBreaker.State.OPEN, circuitBreakerRegistry.circuitBreaker("webhook").getState());
+		assertEquals("DEGRADED", webhookDeliveryHealthIndicator.health().getStatus().getCode(),
+				"an open circuit breaker should surface as a degraded (not down) health signal");
 
 		int requestCountBefore = wireMock.findAll(postRequestedFor(urlEqualTo("/hook"))).size();
 		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();

@@ -100,8 +100,13 @@ public class SecurityConfig {
 				.exceptionHandling(exceptions -> exceptions
 						.authenticationEntryPoint(new ProblemDetailAuthenticationEntryPoint(objectMapper)))
 				.authorizeHttpRequests(auth -> auth
+						// A blanket permitAll here is safe, not lax: management.endpoints.web
+						// .exposure.include is the real gate, restricted to health/info/
+						// metrics/prometheus - anything not in that list 404s regardless of
+						// this rule. In prod this port isn't even reachable publicly (see
+						// management.server.port), so this only matters for local dev/test.
 						.requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh",
-								"/api/v1/auth/logout", "/actuator/health", "/swagger-ui/**", "/swagger-ui.html",
+								"/api/v1/auth/logout", "/actuator/**", "/swagger-ui/**", "/swagger-ui.html",
 								"/v3/api-docs/**")
 						.permitAll()
 						.anyRequest().authenticated())

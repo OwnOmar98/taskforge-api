@@ -24,6 +24,7 @@ import com.taskforge.audit.AuditLogRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
+import io.micrometer.core.instrument.MeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 
 // Resilience4j's Spring AOP aspect order is fixed, not based on annotation
@@ -46,13 +47,15 @@ public class WebhookSender {
 	private final AuditLogRepository auditLogRepository;
 	private final ObjectMapper objectMapper;
 	private final Executor webhookExecutor;
+	private final MeterRegistry meterRegistry;
 
 	public WebhookSender(AuditLogRepository auditLogRepository, ObjectMapper objectMapper,
-			@Qualifier("webhookExecutor") Executor webhookExecutor) {
+			@Qualifier("webhookExecutor") Executor webhookExecutor, MeterRegistry meterRegistry) {
 		this.restClient = RestClient.create();
 		this.auditLogRepository = auditLogRepository;
 		this.objectMapper = objectMapper;
 		this.webhookExecutor = webhookExecutor;
+		this.meterRegistry = meterRegistry;
 	}
 
 	@Retry(name = "webhook", fallbackMethod = "sendFallback")
@@ -81,6 +84,7 @@ public class WebhookSender {
 	private CompletableFuture<Void> sendFallback(Webhook webhook, String payload, String idempotencyKey,
 			Throwable throwable) {
 		log.warn("Webhook delivery failed for webhook {}: {}", webhook.getId(), throwable.toString());
+		meterRegistry.counter("webhook.delivery.failures").increment();
 
 		String metadata = objectMapper
 				.writeValueAsString(Map.of("url", webhook.getUrl(), "error", String.valueOf(throwable.getMessage())));
