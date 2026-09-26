@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ import com.taskforge.common.exception.ConflictException;
 import com.taskforge.organization.InvitationService;
 import com.taskforge.security.CurrentUserId;
 import com.taskforge.security.JwtService;
+import com.taskforge.security.LoginAttemptService;
 import com.taskforge.security.RefreshTokenService;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
@@ -39,16 +41,19 @@ public class AuthController {
 	private final JwtService jwtService;
 	private final RefreshTokenService refreshTokenService;
 	private final InvitationService invitationService;
+	private final LoginAttemptService loginAttemptService;
 
 	public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
 			AuthenticationManager authenticationManager, JwtService jwtService,
-			RefreshTokenService refreshTokenService, InvitationService invitationService) {
+			RefreshTokenService refreshTokenService, InvitationService invitationService,
+			LoginAttemptService loginAttemptService) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.authenticationManager = authenticationManager;
 		this.jwtService = jwtService;
 		this.refreshTokenService = refreshTokenService;
 		this.invitationService = invitationService;
+		this.loginAttemptService = loginAttemptService;
 	}
 
 	// @Transactional so a bad/expired/mismatched invitationToken rolls back the
@@ -74,8 +79,17 @@ public class AuthController {
 
 	@PostMapping("/login")
 	public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-		authenticationManager.authenticate(
-				new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+		loginAttemptService.checkNotLocked(request.email());
+
+		try {
+			authenticationManager.authenticate(
+					new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+		}
+		catch (AuthenticationException e) {
+			loginAttemptService.recordFailure(request.email());
+			throw e;
+		}
+		loginAttemptService.recordSuccess(request.email());
 
 		User user = userRepository.findByEmail(request.email()).orElseThrow();
 

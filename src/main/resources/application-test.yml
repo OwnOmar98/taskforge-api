@@ -39,6 +39,19 @@ app:
   encryption-key: QWWuqTK9UTB7di+bNrP0o0LUWB/hT4JQ1NC0BomNkEM=
   jwt:
     secret: test-only-jwt-signing-secret-0123456789-0123456789
+  # Generous enough that other test classes' incidental /login calls (getting
+  # a token, not testing rate limiting itself) never trip it; the dedicated
+  # rate-limit test overrides max-attempts down further via
+  # @DynamicPropertySource for its own fast, deterministic assertions.
+  rate-limit:
+    login:
+      max-attempts: 20
+      window: 10s
+  # Small enough for a fast, deterministic lockout test; safe for every other
+  # test class since each of those only ever fails a given email once.
+  login-lockout:
+    max-failures: 4
+    lockout-duration: 10s
   # endpoint is deliberately absent here - the MinIO Testcontainer's mapped
   # port is only known at runtime, so tests inject it via @DynamicPropertySource.
   storage:
