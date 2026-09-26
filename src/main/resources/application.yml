@@ -7,6 +7,41 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  # Stop accepting new requests but let in-flight ones finish (up to the
+  # timeout above) instead of cutting them off mid-response - the executors
+  # in AsyncConfig are given the same courtesy for in-flight async work.
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Deliberately not the auto-configured default (health only) or a
+        # blanket "*" (which would include env/beans/configprops - real
+        # information disclosure). These four are the ones an operator or a
+        # scraper actually needs; everything else stays unexposed regardless
+        # of network reachability.
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+      group:
+        # Only the app's own liveness/readiness state plus the dependencies
+        # that genuinely block serving traffic (DB, cache). webhookDelivery
+        # is deliberately excluded here - an open circuit breaker for one
+        # org's webhook means that delivery is degraded, not that this pod
+        # is unfit to receive traffic, so it must never fail a readiness
+        # probe and take a healthy instance out of rotation.
+        readiness:
+          include: readinessState,db,redis
+        liveness:
+          include: livenessState
 
 resilience4j:
   retry:

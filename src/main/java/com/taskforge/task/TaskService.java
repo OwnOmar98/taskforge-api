@@ -30,6 +30,9 @@ import com.taskforge.task.events.TaskAssignedEvent;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+
 @Service
 public class TaskService {
 
@@ -38,37 +41,48 @@ public class TaskService {
 	private final ProjectMemberRepository projectMemberRepository;
 	private final UserRepository userRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final MeterRegistry meterRegistry;
 
 	public TaskService(TaskRepository taskRepository, ProjectRepository projectRepository,
 			ProjectMemberRepository projectMemberRepository, UserRepository userRepository,
-			ApplicationEventPublisher eventPublisher) {
+			ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry) {
 		this.taskRepository = taskRepository;
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
 		this.userRepository = userRepository;
 		this.eventPublisher = eventPublisher;
+		this.meterRegistry = meterRegistry;
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
 	@Transactional
 	public TaskResponse createTask(UUID projectId, String title, String description, TaskPriority priority,
 			LocalDate dueDate, UUID assigneeId, UUID actorId) {
-		Project project = projectRepository.findById(projectId)
-				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
-						"Project not found"));
+		Timer.Sample sample = Timer.start(meterRegistry);
+		try {
+			Project project = projectRepository.findById(projectId)
+					.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
+							"Project not found"));
 
-		Task task = new Task(project, title, description, priority, dueDate);
+			Task task = new Task(project, title, description, priority, dueDate);
 
-		if (assigneeId != null) {
-			task.assignTo(validateAssigneeOrThrow(projectId, assigneeId));
+			if (assigneeId != null) {
+				task.assignTo(validateAssigneeOrThrow(projectId, assigneeId));
+			}
+
+			Task saved = taskRepository.save(task);
+			if (assigneeId != null) {
+				eventPublisher.publishEvent(new TaskAssignedEvent(saved.getId(), assigneeId, actorId));
+			}
+
+			return toResponse(saved, projectId);
 		}
-
-		Task saved = taskRepository.save(task);
-		if (assigneeId != null) {
-			eventPublisher.publishEvent(new TaskAssignedEvent(saved.getId(), assigneeId, actorId));
+		finally {
+			// Covers the whole method, not just the insert - a slow permission
+			// check or project lookup is just as real a contributor to task
+			// creation latency as the write itself.
+			sample.stop(meterRegistry.timer("task.creation.duration"));
 		}
-
-		return toResponse(saved, projectId);
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")

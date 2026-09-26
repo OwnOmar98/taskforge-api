@@ -34,7 +34,11 @@ import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -64,6 +68,9 @@ class TaskServiceTest {
 
 	@Autowired
 	private UserRepository userRepository;
+
+	@Autowired
+	private MeterRegistry meterRegistry;
 
 	@AfterEach
 	void clearSecurityContext() {
@@ -105,6 +112,22 @@ class TaskServiceTest {
 				null, lead.getId());
 
 		assertNull(task.assigneeId());
+	}
+
+	@Test
+	void creatingATaskRecordsItsLatency() {
+		Project project = createProject();
+		User lead = createProjectMember(project, ProjectMemberRole.LEAD);
+		authenticateAs(lead);
+
+		long countBefore = meterRegistry.find("task.creation.duration").timer() == null ? 0
+				: meterRegistry.find("task.creation.duration").timer().count();
+
+		taskService.createTask(project.getId(), "Timed task", null, TaskPriority.LOW, null, null, lead.getId());
+
+		Timer timer = meterRegistry.find("task.creation.duration").timer();
+		assertNotNull(timer, "creating a task should have registered the timer");
+		assertEquals(countBefore + 1, timer.count());
 	}
 
 	@Test

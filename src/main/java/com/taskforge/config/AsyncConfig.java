@@ -23,6 +23,7 @@ public class AsyncConfig {
 		executor.setMaxPoolSize(10);
 		executor.setQueueCapacity(500);
 		executor.setThreadNamePrefix("notification-");
+		configureGracefulShutdown(executor);
 		executor.initialize();
 		return executor;
 	}
@@ -38,8 +39,19 @@ public class AsyncConfig {
 		executor.setMaxPoolSize(10);
 		executor.setQueueCapacity(500);
 		executor.setThreadNamePrefix("webhook-");
+		configureGracefulShutdown(executor);
 		executor.initialize();
 		return executor;
+	}
+
+	// server.shutdown=graceful only covers the web server itself (stop
+	// accepting new requests, let in-flight ones finish) - these
+	// manually-defined executors need the same instruction explicitly, or a
+	// shutdown could still cut off an in-flight notification/webhook send
+	// mid-task rather than letting it finish first.
+	private void configureGracefulShutdown(ThreadPoolTaskExecutor executor) {
+		executor.setWaitForTasksToCompleteOnShutdown(true);
+		executor.setAwaitTerminationSeconds(20);
 	}
 
 }
