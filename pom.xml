@@ -193,6 +193,36 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<!-- CI-only tooling: validates the raw migration files directly
+			     against a clean database (mvn flyway:migrate), independent of
+			     the app's own Flyway autoconfiguration that every test already
+			     exercises indirectly. Declaring it here binds it to no build
+			     phase, so it never runs as part of a normal build/test - only
+			     when invoked explicitly. Pinned to the same Flyway version
+			     Spring Boot's parent POM already resolves for the app itself,
+			     so this check and the real runtime behavior can't diverge. -->
+			<plugin>
+				<groupId>org.flywaydb</groupId>
+				<artifactId>flyway-maven-plugin</artifactId>
+				<version>12.4.0</version>
+				<configuration>
+					<locations>
+						<location>filesystem:src/main/resources/db/migration</location>
+					</locations>
+				</configuration>
+				<dependencies>
+					<dependency>
+						<groupId>org.flywaydb</groupId>
+						<artifactId>flyway-database-postgresql</artifactId>
+						<version>12.4.0</version>
+					</dependency>
+					<dependency>
+						<groupId>org.postgresql</groupId>
+						<artifactId>postgresql</artifactId>
+						<version>42.7.13</version>
+					</dependency>
+				</dependencies>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
