@@ -33,6 +33,11 @@ app:
   encryption-key: ${APP_ENCRYPTION_KEY}
   jwt:
     secret: ${APP_JWT_SECRET}
+  # Comma-separated in the env var (Spring binds it to a List<String>
+  # automatically); empty by default, same as the base config - a real
+  # frontend origin gets added here when one exists, not before.
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   storage:
     endpoint: ${DO_SPACES_ENDPOINT}
     region: ${DO_SPACES_REGION}
