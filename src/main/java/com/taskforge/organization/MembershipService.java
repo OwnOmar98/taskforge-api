@@ -1,14 +1,16 @@
 package com.taskforge.organization;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.taskforge.audit.events.MemberRoleChangedEvent;
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
@@ -32,10 +34,9 @@ public class MembershipService {
 	// any {orgId} route, and listing members isn't a privileged action on top
 	// of that - any member can see the roster.
 	@Transactional(readOnly = true)
-	public List<MemberResponse> listMembers(UUID organizationId) {
-		return membershipRepository.findByOrganizationIdWithUser(organizationId).stream()
-				.map(this::toResponse)
-				.toList();
+	public PageResponse<MemberResponse> listMembers(UUID organizationId, Pageable pageable) {
+		Page<Membership> page = membershipRepository.findByOrganizationIdWithUser(organizationId, pageable);
+		return PageResponse.from(page.map(this::toResponse));
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")

@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+@Tag(name = "Labels")
 @RestController
 @RequestMapping("/api/v1/tasks/{taskId}/labels")
 public class TaskLabelController {
@@ -20,12 +24,14 @@ public class TaskLabelController {
 		this.labelService = labelService;
 	}
 
+	@Operation(summary = "Attach a label to a task")
 	@PostMapping("/{labelId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void attach(@PathVariable UUID taskId, @PathVariable UUID labelId) {
 		labelService.attachLabel(taskId, labelId);
 	}
 
+	@Operation(summary = "Detach a label from a task")
 	@DeleteMapping("/{labelId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void detach(@PathVariable UUID taskId, @PathVariable UUID labelId) {

@@ -139,7 +139,7 @@ class ProjectControllerTest {
 		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/projects")
 						.header("Authorization", "Bearer " + memberToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(1)));
+				.andExpect(jsonPath("$.content", hasSize(1)));
 
 		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/projects/" + projectId)
 						.header("Authorization", "Bearer " + memberToken))

@@ -1,13 +1,15 @@
 package com.taskforge.project;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
@@ -59,8 +61,9 @@ public class ProjectService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ProjectResponse> listProjects(UUID organizationId) {
-		return projectRepository.findByOrganization_Id(organizationId).stream().map(this::toResponse).toList();
+	public PageResponse<ProjectResponse> listProjects(UUID organizationId, Pageable pageable) {
+		Page<Project> page = projectRepository.findByOrganization_Id(organizationId, pageable);
+		return PageResponse.from(page.map(this::toResponse));
 	}
 
 	@Transactional(readOnly = true)

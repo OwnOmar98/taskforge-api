@@ -23,8 +23,11 @@ import com.taskforge.task.dto.PresignedUploadRequest;
 import com.taskforge.task.dto.PresignedUploadResponse;
 import com.taskforge.task.dto.TaskAttachmentResponse;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Task Attachments")
 @RestController
 @RequestMapping("/api/v1/tasks/{taskId}/attachments")
 public class TaskAttachmentController {
@@ -35,6 +38,7 @@ public class TaskAttachmentController {
 		this.taskAttachmentService = taskAttachmentService;
 	}
 
+	@Operation(summary = "Upload an attachment directly through the server")
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public TaskAttachmentResponse upload(@PathVariable UUID taskId, @RequestParam("file") MultipartFile file,
@@ -43,6 +47,7 @@ public class TaskAttachmentController {
 		return taskAttachmentService.uploadAttachment(taskId, file, visibility, currentUserId);
 	}
 
+	@Operation(summary = "Redirect to a presigned download URL for an attachment")
 	@GetMapping("/{attachmentId}/download")
 	public ResponseEntity<Void> download(@PathVariable UUID taskId, @PathVariable UUID attachmentId) {
 		URL presignedUrl = taskAttachmentService.getDownloadUrl(taskId, attachmentId);
@@ -51,6 +56,7 @@ public class TaskAttachmentController {
 
 	// Client-direct upload, step 1: request a signed PUT URL. The client then
 	// uploads the raw bytes straight to storage, bypassing this server entirely.
+	@Operation(summary = "Request a presigned URL for a client-direct upload")
 	@PostMapping("/presigned")
 	@ResponseStatus(HttpStatus.CREATED)
 	public PresignedUploadResponse requestPresignedUpload(@PathVariable UUID taskId,
@@ -60,6 +66,7 @@ public class TaskAttachmentController {
 
 	// Client-direct upload, step 2: after the direct PUT succeeds, the client
 	// calls this to confirm it and create the actual attachment record.
+	@Operation(summary = "Confirm a completed client-direct upload")
 	@PostMapping("/presigned/complete")
 	@ResponseStatus(HttpStatus.CREATED)
 	public TaskAttachmentResponse completePresignedUpload(@PathVariable UUID taskId,

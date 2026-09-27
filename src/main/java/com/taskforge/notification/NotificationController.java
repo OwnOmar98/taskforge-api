@@ -15,6 +15,9 @@ import com.taskforge.notification.dto.CursorPageResponse;
 import com.taskforge.notification.dto.NotificationResponse;
 import com.taskforge.security.CurrentUserId;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 // No {orgId}/{projectId} in either route: notifications are inherently
 // user-centric, not org-scoped - a user may have notifications from several
 // organizations, listed together, same reasoning as /auth/me.
@@ -26,6 +29,7 @@ import com.taskforge.security.CurrentUserId;
 // shifts under concurrent inserts) actually bites. It also never needs
 // jump-to-page-N or a total count, only "load more" - what cursor pagination
 // is for.
+@Tag(name = "Notifications")
 @RestController
 @RequestMapping("/api/v1/notifications")
 public class NotificationController {
@@ -36,18 +40,21 @@ public class NotificationController {
 		this.notificationService = notificationService;
 	}
 
+	@Operation(summary = "List the current user's notifications (cursor-paginated)")
 	@GetMapping
 	public CursorPageResponse<NotificationResponse> list(@CurrentUserId UUID currentUserId,
 			@RequestParam(required = false) String cursor, @RequestParam(defaultValue = "20") int size) {
 		return notificationService.listNotifications(currentUserId, cursor, size);
 	}
 
+	@Operation(summary = "Mark a single notification as read")
 	@PatchMapping("/{notificationId}/read")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void markAsRead(@PathVariable UUID notificationId, @CurrentUserId UUID currentUserId) {
 		notificationService.markAsRead(currentUserId, notificationId);
 	}
 
+	@Operation(summary = "Mark all notifications as read")
 	@PatchMapping("/read")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void markAllAsRead(@CurrentUserId UUID currentUserId) {

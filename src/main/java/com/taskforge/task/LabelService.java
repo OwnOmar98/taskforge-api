@@ -1,12 +1,14 @@
 package com.taskforge.task;
 
-import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
@@ -46,8 +48,9 @@ public class LabelService {
 	// No @PreAuthorize: TenantInterceptor already requires org membership for
 	// any {orgId} route, and seeing the shared label set isn't privileged.
 	@Transactional(readOnly = true)
-	public List<LabelResponse> listLabels(UUID organizationId) {
-		return labelRepository.findByOrganization_Id(organizationId).stream().map(this::toResponse).toList();
+	public PageResponse<LabelResponse> listLabels(UUID organizationId, Pageable pageable) {
+		Page<Label> page = labelRepository.findByOrganization_Id(organizationId, pageable);
+		return PageResponse.from(page.map(this::toResponse));
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")

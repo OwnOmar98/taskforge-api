@@ -39,3 +39,24 @@ curl http://localhost:8080/actuator/health
 ```
 
 Should return `{"status":"UP"}`.
+
+## API documentation
+
+Interactive Swagger UI, with a working "Authorize" flow for the JWT bearer token returned by
+`/api/v1/auth/login`:
+
+```
+http://localhost:8080/swagger-ui.html
+```
+
+Raw OpenAPI document: `http://localhost:8080/v3/api-docs`.
+
+## API versioning
+
+The API is versioned in the URI (`/api/v1/...`), not via a request header. A URI prefix is visible
+in every request without needing to inspect headers, works with tools that don't easily let you set
+custom headers (a browser address bar, `curl` without extra flags), and caches cleanly - a header-based
+scheme (`Accept: application/vnd.taskforge.v1+json` or a custom `X-API-Version`) would avoid the URL
+change a breaking v2 requires, but that tradeoff isn't worth it for an API with no existing v1 clients
+to protect yet. A breaking change would ship as `/api/v2/...`, decided if and when one is actually
+needed.

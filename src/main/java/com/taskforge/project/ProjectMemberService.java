@@ -1,12 +1,14 @@
 package com.taskforge.project;
 
-import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
@@ -38,9 +40,10 @@ public class ProjectMemberService {
 	// any {orgId} route, and seeing who's on a project isn't a privileged
 	// action on top of that - same reasoning as org member listing.
 	@Transactional(readOnly = true)
-	public List<ProjectMemberResponse> listMembers(UUID organizationId, UUID projectId) {
+	public PageResponse<ProjectMemberResponse> listMembers(UUID organizationId, UUID projectId, Pageable pageable) {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
-		return projectMemberRepository.findByProjectIdWithUser(projectId).stream().map(this::toResponse).toList();
+		Page<ProjectMember> page = projectMemberRepository.findByProjectIdWithUser(projectId, pageable);
+		return PageResponse.from(page.map(this::toResponse));
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")

@@ -16,8 +16,11 @@ import com.taskforge.security.CurrentUserId;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Invitations")
 @RestController
 public class InvitationController {
 
@@ -29,6 +32,7 @@ public class InvitationController {
 		this.userRepository = userRepository;
 	}
 
+	@Operation(summary = "Invite a user to an organization")
 	@PostMapping("/api/v1/organizations/{orgId}/invitations")
 	@ResponseStatus(HttpStatus.CREATED)
 	public InvitationResponse create(@PathVariable UUID orgId, @Valid @RequestBody CreateInvitationRequest request,
@@ -40,6 +44,7 @@ public class InvitationController {
 	// determines the organization, and the caller isn't a member yet - a
 	// {orgId} path variable here would make TenantInterceptor reject the
 	// request before the invitation is even looked up.
+	@Operation(summary = "Accept an invitation")
 	@PostMapping("/api/v1/invitations/{token}/accept")
 	@ResponseStatus(HttpStatus.CREATED)
 	public MemberResponse accept(@PathVariable String token, @CurrentUserId UUID currentUserId) {
@@ -47,6 +52,7 @@ public class InvitationController {
 		return invitationService.acceptInvitation(token, currentUser);
 	}
 
+	@Operation(summary = "Decline an invitation")
 	@PostMapping("/api/v1/invitations/{token}/decline")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void decline(@PathVariable String token, @CurrentUserId UUID currentUserId) {
