@@ -174,6 +174,22 @@
 			<artifactId>testcontainers-redis</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Replaces a hand-rolled MinIO GenericContainer: MinIO locked down
+		     anonymous image pulls on every public registry in September 2026,
+		     breaking CI outright. LocalStack is purpose-built for exactly this
+		     (mocking AWS services in tests), remains genuinely free/anonymous,
+		     and is a low-risk swap since the app already talks to S3 through a
+		     generic, endpoint-configurable AWS SDK client with no MinIO-specific
+		     code anywhere. -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-localstack</artifactId>
+			<!-- Not covered by Spring Boot's parent POM dependency management
+			     (unlike testcontainers-postgresql) - pinned to the exact
+			     Testcontainers version already resolved for this project. -->
+			<version>2.0.5</version>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.awaitility</groupId>
 			<artifactId>awaitility</artifactId>
@@ -192,6 +208,36 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!-- CI-only tooling: validates the raw migration files directly
+			     against a clean database (mvn flyway:migrate), independent of
+			     the app's own Flyway autoconfiguration that every test already
+			     exercises indirectly. Declaring it here binds it to no build
+			     phase, so it never runs as part of a normal build/test - only
+			     when invoked explicitly. Pinned to the same Flyway version
+			     Spring Boot's parent POM already resolves for the app itself,
+			     so this check and the real runtime behavior can't diverge. -->
+			<plugin>
+				<groupId>org.flywaydb</groupId>
+				<artifactId>flyway-maven-plugin</artifactId>
+				<version>12.4.0</version>
+				<configuration>
+					<locations>
+						<location>filesystem:src/main/resources/db/migration</location>
+					</locations>
+				</configuration>
+				<dependencies>
+					<dependency>
+						<groupId>org.flywaydb</groupId>
+						<artifactId>flyway-database-postgresql</artifactId>
+						<version>12.4.0</version>
+					</dependency>
+					<dependency>
+						<groupId>org.postgresql</groupId>
+						<artifactId>postgresql</artifactId>
+						<version>42.7.13</version>
+					</dependency>
+				</dependencies>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

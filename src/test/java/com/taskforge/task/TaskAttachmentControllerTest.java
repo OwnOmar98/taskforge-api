@@ -22,12 +22,14 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.containers.localstack.LocalStackContainer;
+import org.testcontainers.containers.localstack.LocalStackContainer.Service;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
+import com.redis.testcontainers.RedisContainer;
 import com.taskforge.auth.dto.RegisterRequest;
 import com.taskforge.organization.dto.CreateOrganizationRequest;
 import com.taskforge.project.dto.CreateProjectRequest;
@@ -64,19 +66,29 @@ class TaskAttachmentControllerTest {
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
 
-	// Docker Hub withdrew the minio/minio image in 2026; MinIO now publishes
-	// only to quay.io.
 	@Container
-	static GenericContainer<?> minio = new GenericContainer<>("quay.io/minio/minio")
-			.withCommand("server", "/data")
-			.withEnv("MINIO_ROOT_USER", "minioadmin")
-			.withEnv("MINIO_ROOT_PASSWORD", "minioadmin")
-			.withExposedPorts(9000)
-			.waitingFor(Wait.forHttp("/minio/health/live").forPort(9000));
+	@ServiceConnection
+	static RedisContainer redis = new RedisContainer("redis:7");
+
+	// MinIO (the previous backend here) locked down anonymous image pulls on
+	// every public registry in September 2026, breaking CI outright.
+	// LocalStack is purpose-built for exactly this - mocking AWS services in
+	// tests - and the app needs no code change to use it: it already talks to
+	// S3 through a generic, endpoint-configurable AWS SDK client, the same
+	// one already pointed at real DO Spaces in prod. Pinned to 3.8
+	// specifically (not a current tag): newer LocalStack releases added a
+	// license-activation gate that now refuses to start any service,
+	// including community-tier S3, without a paid auth token - confirmed
+	// directly by running the current tag and watching it exit immediately
+	// with that error. 3.8 predates that gate and starts with no credentials
+	// at all, which is all a plain S3 mock for tests needs.
+	@Container
+	static LocalStackContainer localstack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+			.withServices(Service.S3);
 
 	@DynamicPropertySource
 	static void storageProperties(DynamicPropertyRegistry registry) {
-		registry.add("app.storage.endpoint", () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(9000));
+		registry.add("app.storage.endpoint", () -> localstack.getEndpointOverride(Service.S3).toString());
 		// Small enough to exercise the size-rejection path without uploading a
 		// real multi-megabyte file in every test run.
 		registry.add("app.storage.max-file-size-bytes", () -> "1024");
@@ -85,19 +97,18 @@ class TaskAttachmentControllerTest {
 	@BeforeAll
 	static void createBucket() {
 		try (S3Client client = S3Client.builder()
-				.endpointOverride(URI.create("http://" + minio.getHost() + ":" + minio.getMappedPort(9000)))
-				.region(Region.US_EAST_1)
-				.credentialsProvider(
-						StaticCredentialsProvider.create(AwsBasicCredentials.create("minioadmin", "minioadmin")))
+				.endpointOverride(localstack.getEndpointOverride(Service.S3))
+				.region(Region.of(localstack.getRegion()))
+				.credentialsProvider(StaticCredentialsProvider
+						.create(AwsBasicCredentials.create(localstack.getAccessKey(), localstack.getSecretKey())))
 				.forcePathStyle(true)
 				.build()) {
 			client.createBucket(CreateBucketRequest.builder().bucket("taskforge-test").build());
 
-			// MinIO ignores the per-object canned ACL our production code sets on
-			// PUBLIC uploads entirely - it only honors bucket policies. Real S3 and
-			// DO Spaces do honor that ACL, so production code is unaffected; this
-			// policy exists purely so the public-visibility test can verify
-			// anonymous access at all against this backend.
+			// A canned per-object ACL alone isn't enough for every S3-compatible
+			// backend to actually serve an object anonymously - a bucket policy is
+			// the one mechanism guaranteed to work everywhere, which is what the
+			// public-visibility test below actually needs to verify.
 			String publicReadPolicy = """
 					{
 					  "Version": "2012-10-17",

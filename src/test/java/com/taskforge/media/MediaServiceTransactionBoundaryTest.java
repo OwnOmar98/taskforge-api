@@ -1,6 +1,5 @@
 package com.taskforge.media;
 
-import java.net.URI;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -14,11 +13,12 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.containers.localstack.LocalStackContainer;
+import org.testcontainers.containers.localstack.LocalStackContainer.Service;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import com.taskforge.storage.MediaVisibility;
 import com.taskforge.user.User;
@@ -50,26 +50,25 @@ class MediaServiceTransactionBoundaryTest {
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
 
+	// See TaskAttachmentControllerTest's identical setup for why this is
+	// LocalStack rather than MinIO, and why it's pinned to 3.8 specifically
+	// (newer tags gate every service, S3 included, behind a paid license).
 	@Container
-	static GenericContainer<?> minio = new GenericContainer<>("quay.io/minio/minio")
-			.withCommand("server", "/data")
-			.withEnv("MINIO_ROOT_USER", "minioadmin")
-			.withEnv("MINIO_ROOT_PASSWORD", "minioadmin")
-			.withExposedPorts(9000)
-			.waitingFor(Wait.forHttp("/minio/health/live").forPort(9000));
+	static LocalStackContainer localstack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+			.withServices(Service.S3);
 
 	@DynamicPropertySource
 	static void storageProperties(DynamicPropertyRegistry registry) {
-		registry.add("app.storage.endpoint", () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(9000));
+		registry.add("app.storage.endpoint", () -> localstack.getEndpointOverride(Service.S3).toString());
 	}
 
 	@BeforeAll
 	static void createBucket() {
 		try (S3Client client = S3Client.builder()
-				.endpointOverride(URI.create("http://" + minio.getHost() + ":" + minio.getMappedPort(9000)))
-				.region(Region.US_EAST_1)
-				.credentialsProvider(
-						StaticCredentialsProvider.create(AwsBasicCredentials.create("minioadmin", "minioadmin")))
+				.endpointOverride(localstack.getEndpointOverride(Service.S3))
+				.region(Region.of(localstack.getRegion()))
+				.credentialsProvider(StaticCredentialsProvider
+						.create(AwsBasicCredentials.create(localstack.getAccessKey(), localstack.getSecretKey())))
 				.forcePathStyle(true)
 				.build()) {
 			client.createBucket(CreateBucketRequest.builder().bucket("taskforge-test").build());

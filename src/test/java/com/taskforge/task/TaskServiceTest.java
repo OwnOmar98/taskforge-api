@@ -17,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.redis.testcontainers.RedisContainer;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.organization.Membership;
@@ -50,6 +51,10 @@ class TaskServiceTest {
 	@Container
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
+
+	@Container
+	@ServiceConnection
+	static RedisContainer redis = new RedisContainer("redis:7");
 
 	@Autowired
 	private TaskService taskService;
