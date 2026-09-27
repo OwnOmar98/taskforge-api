@@ -17,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.redis.testcontainers.RedisContainer;
 import com.taskforge.auth.dto.LoginRequest;
 import com.taskforge.auth.dto.RegisterRequest;
 import com.taskforge.organization.dto.CreateInvitationRequest;
@@ -47,6 +48,10 @@ class InvitationControllerTest {
 	@Container
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
+
+	@Container
+	@ServiceConnection
+	static RedisContainer redis = new RedisContainer("redis:7");
 
 	@Autowired
 	private MockMvc mockMvc;
