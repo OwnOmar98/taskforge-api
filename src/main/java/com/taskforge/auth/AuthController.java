@@ -29,8 +29,15 @@ import com.taskforge.security.RefreshTokenService;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Authentication")
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
@@ -59,6 +66,8 @@ public class AuthController {
 	// @Transactional so a bad/expired/mismatched invitationToken rolls back the
 	// User creation too - registering with a token is one atomic operation,
 	// not "create the account regardless, then maybe join the org".
+	@Operation(summary = "Register a new user, optionally accepting an invitation")
+	@SecurityRequirements
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
 	@Transactional
@@ -77,6 +86,10 @@ public class AuthController {
 		return new AuthResponse(jwtService.generateAccessToken(user.getId()), refreshTokenService.issue(user));
 	}
 
+	@Operation(summary = "Log in with email and password")
+	@ApiResponse(responseCode = "401", description = "Invalid credentials",
+			content = @Content(schema = @Schema(ref = "#/components/schemas/ProblemDetail")))
+	@SecurityRequirements
 	@PostMapping("/login")
 	public AuthResponse login(@Valid @RequestBody LoginRequest request) {
 		loginAttemptService.checkNotLocked(request.email());
@@ -96,6 +109,8 @@ public class AuthController {
 		return new AuthResponse(jwtService.generateAccessToken(user.getId()), refreshTokenService.issue(user));
 	}
 
+	@Operation(summary = "Exchange a refresh token for a new token pair")
+	@SecurityRequirements
 	@PostMapping("/refresh")
 	public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
 		RefreshTokenService.TokenPair rotated = refreshTokenService.rotate(request.refreshToken());
@@ -103,12 +118,15 @@ public class AuthController {
 		return new AuthResponse(jwtService.generateAccessToken(rotated.user().getId()), rotated.refreshToken());
 	}
 
+	@Operation(summary = "Revoke a refresh token")
+	@SecurityRequirements
 	@PostMapping("/logout")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void logout(@Valid @RequestBody RefreshRequest request) {
 		refreshTokenService.revoke(request.refreshToken());
 	}
 
+	@Operation(summary = "Get the current authenticated user")
 	@GetMapping("/me")
 	public MeResponse me(@CurrentUserId UUID userId) {
 		User user = userRepository.findById(userId).orElseThrow();

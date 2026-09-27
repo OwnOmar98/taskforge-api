@@ -1,8 +1,10 @@
 package com.taskforge.project;
 
-import java.util.List;
 import java.util.UUID;
 
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -13,13 +15,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.project.dto.CreateProjectRequest;
 import com.taskforge.project.dto.ProjectResponse;
 import com.taskforge.project.dto.UpdateProjectRequest;
 import com.taskforge.security.CurrentUserId;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Projects")
 @RestController
 @RequestMapping("/api/v1/organizations/{orgId}/projects")
 public class ProjectController {
@@ -30,6 +36,7 @@ public class ProjectController {
 		this.projectService = projectService;
 	}
 
+	@Operation(summary = "Create a project")
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProjectResponse create(@PathVariable UUID orgId, @Valid @RequestBody CreateProjectRequest request,
@@ -37,16 +44,20 @@ public class ProjectController {
 		return projectService.createProject(orgId, request.key(), request.name(), currentUserId);
 	}
 
+	@Operation(summary = "List projects in an organization")
 	@GetMapping
-	public List<ProjectResponse> list(@PathVariable UUID orgId) {
-		return projectService.listProjects(orgId);
+	public PageResponse<ProjectResponse> list(@PathVariable UUID orgId,
+			@ParameterObject @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
+		return projectService.listProjects(orgId, pageable);
 	}
 
+	@Operation(summary = "Get a project by id")
 	@GetMapping("/{projectId}")
 	public ProjectResponse get(@PathVariable UUID orgId, @PathVariable UUID projectId) {
 		return projectService.getProject(orgId, projectId);
 	}
 
+	@Operation(summary = "Rename a project")
 	@PatchMapping("/{projectId}")
 	public ProjectResponse update(@PathVariable UUID orgId, @PathVariable UUID projectId,
 			@Valid @RequestBody UpdateProjectRequest request) {

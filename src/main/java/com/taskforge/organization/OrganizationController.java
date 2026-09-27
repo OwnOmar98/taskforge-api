@@ -16,8 +16,11 @@ import com.taskforge.organization.dto.OrganizationResponse;
 import com.taskforge.organization.dto.UpdateOrganizationRequest;
 import com.taskforge.security.CurrentUserId;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Organizations")
 @RestController
 @RequestMapping("/api/v1/organizations")
 public class OrganizationController {
@@ -28,6 +31,7 @@ public class OrganizationController {
 		this.organizationService = organizationService;
 	}
 
+	@Operation(summary = "Create an organization")
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request,
@@ -35,6 +39,7 @@ public class OrganizationController {
 		return toResponse(organizationService.createOrganization(request.name(), currentUserId));
 	}
 
+	@Operation(summary = "Rename an organization")
 	@PatchMapping("/{orgId}")
 	public OrganizationResponse update(@PathVariable UUID orgId,
 			@Valid @RequestBody UpdateOrganizationRequest request) {

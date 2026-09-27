@@ -1,13 +1,15 @@
 package com.taskforge.task;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.GeneralErrorCode;
 import com.taskforge.common.exception.ResourceNotFoundException;
 import com.taskforge.task.dto.TaskCommentResponse;
@@ -45,8 +47,9 @@ public class TaskCommentService {
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
 	@Transactional(readOnly = true)
-	public List<TaskCommentResponse> listComments(UUID taskId) {
-		return taskCommentRepository.findByTaskIdWithAuthor(taskId).stream().map(this::toResponse).toList();
+	public PageResponse<TaskCommentResponse> listComments(UUID taskId, Pageable pageable) {
+		Page<TaskComment> page = taskCommentRepository.findByTaskIdWithAuthor(taskId, pageable);
+		return PageResponse.from(page.map(this::toResponse));
 	}
 
 	// Removes the comment through the parent Task's own collection rather than

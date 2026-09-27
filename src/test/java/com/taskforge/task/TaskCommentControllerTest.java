@@ -99,7 +99,7 @@ class TaskCommentControllerTest {
 		mockMvc.perform(get("/api/v1/tasks/" + taskId + "/comments")
 						.header("Authorization", "Bearer " + ownerToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(1)));
+				.andExpect(jsonPath("$.content", hasSize(1)));
 
 		mockMvc.perform(delete("/api/v1/tasks/" + taskId + "/comments/" + commentId)
 						.header("Authorization", "Bearer " + ownerToken))
@@ -108,7 +108,7 @@ class TaskCommentControllerTest {
 		mockMvc.perform(get("/api/v1/tasks/" + taskId + "/comments")
 						.header("Authorization", "Bearer " + ownerToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(0)));
+				.andExpect(jsonPath("$.content", hasSize(0)));
 	}
 
 	@Test

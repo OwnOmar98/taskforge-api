@@ -2,6 +2,7 @@ package com.taskforge.task;
 
 import java.util.UUID;
 
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -24,8 +25,11 @@ import com.taskforge.task.dto.TaskResponse;
 import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.task.dto.UpdateTaskRequest;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Tasks")
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/tasks")
 public class TaskController {
@@ -36,6 +40,7 @@ public class TaskController {
 		this.taskService = taskService;
 	}
 
+	@Operation(summary = "Create a task")
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public TaskResponse create(@PathVariable UUID projectId, @Valid @RequestBody CreateTaskRequest request,
@@ -44,24 +49,29 @@ public class TaskController {
 				request.dueDate(), request.assigneeId(), currentUserId);
 	}
 
+	@Operation(summary = "List tasks in a project, with optional status/priority/assignee/label filters")
 	@GetMapping
-	public PageResponse<TaskSummaryProjection> list(@PathVariable UUID projectId, @ModelAttribute TaskFilter filter,
-			@PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
+	public PageResponse<TaskSummaryProjection> list(@PathVariable UUID projectId,
+			@ParameterObject @ModelAttribute TaskFilter filter,
+			@ParameterObject @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
 		return taskService.listTasks(projectId, filter.status(), filter.priority(), filter.assigneeId(),
 				filter.labelId(), pageable);
 	}
 
+	@Operation(summary = "Get a task by id")
 	@GetMapping("/{taskId}")
 	public TaskResponse get(@PathVariable UUID projectId, @PathVariable UUID taskId) {
 		return taskService.getTask(projectId, taskId);
 	}
 
+	@Operation(summary = "Update a task")
 	@PatchMapping("/{taskId}")
 	public TaskResponse update(@PathVariable UUID projectId, @PathVariable UUID taskId,
 			@Valid @RequestBody UpdateTaskRequest request, @CurrentUserId UUID currentUserId) {
 		return taskService.updateTask(projectId, taskId, request, currentUserId);
 	}
 
+	@Operation(summary = "Delete a task")
 	@DeleteMapping("/{taskId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable UUID projectId, @PathVariable UUID taskId) {

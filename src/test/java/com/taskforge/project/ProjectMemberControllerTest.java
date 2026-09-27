@@ -89,7 +89,7 @@ class ProjectMemberControllerTest {
 		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/projects/" + projectId + "/members")
 						.header("Authorization", "Bearer " + memberToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$", hasSize(2)));
+				.andExpect(jsonPath("$.content", hasSize(2)));
 	}
 
 	@Test
