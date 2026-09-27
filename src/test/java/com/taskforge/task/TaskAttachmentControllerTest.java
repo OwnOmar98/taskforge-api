@@ -29,6 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import com.redis.testcontainers.RedisContainer;
 import com.taskforge.auth.dto.RegisterRequest;
 import com.taskforge.organization.dto.CreateOrganizationRequest;
 import com.taskforge.project.dto.CreateProjectRequest;
@@ -64,6 +65,10 @@ class TaskAttachmentControllerTest {
 	@Container
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16");
+
+	@Container
+	@ServiceConnection
+	static RedisContainer redis = new RedisContainer("redis:7");
 
 	// MinIO (the previous backend here) locked down anonymous image pulls on
 	// every public registry in September 2026, breaking CI outright.
