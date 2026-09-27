@@ -8,25 +8,47 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.AuditorAware;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.taskforge.config.JpaAuditingConfig;
 import com.taskforge.organization.Organization;
 import com.taskforge.organization.OrganizationRepository;
 import com.taskforge.project.Project;
 import com.taskforge.project.ProjectRepository;
+import com.taskforge.security.CurrentUserAuditorAware;
 import com.taskforge.user.User;
 import com.taskforge.user.UserRepository;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// @DataJpaTest's slice context excludes @Component/@Service beans, so JpaAuditingConfig's
+// auditorAwareRef ("currentUserAuditorAware") is never satisfied by default - created_at
+// stays null and the insert violates the NOT NULL constraint. A nested @TestConfiguration
+// bean (unaffected by the slice's component-scan exclusion filter) wires the same
+// AuditorAware the full app uses, without the cost of @SpringBootTest.
 @DataJpaTest
 @Testcontainers
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(JpaAuditingConfig.class)
 class TaskCascadeBehaviorTest {
+
+	@TestConfiguration
+	static class AuditorAwareTestConfig {
+
+		@Bean
+		AuditorAware<UUID> currentUserAuditorAware() {
+			return new CurrentUserAuditorAware();
+		}
+
+	}
 
 	@Container
 	@ServiceConnection
