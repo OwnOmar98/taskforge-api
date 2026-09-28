@@ -11,6 +11,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class OrganizationServiceTest {
 
 	@Container
