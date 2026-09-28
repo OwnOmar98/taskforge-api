@@ -42,9 +42,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 					var authentication = new UsernamePasswordAuthenticationToken(user.getId(), null, List.of());
 					SecurityContextHolder.getContext().setAuthentication(authentication);
 				});
-			} catch (JwtException ignored) {
-				// Invalid/expired token: leave the request unauthenticated rather than
-				// rejecting it here, so authorization (not this filter) decides 401 vs 403.
+			} catch (JwtException | IllegalArgumentException ignored) {
+				// Invalid/expired token (JwtException), or a validly-signed token whose
+				// subject isn't a UUID (IllegalArgumentException from UUID.fromString) -
+				// either way, leave the request unauthenticated rather than rejecting it
+				// here, so authorization (not this filter) decides 401 vs 403. Without
+				// catching the second case too, it propagates out of this filter
+				// entirely - past both Spring Security's own exception handling and
+				// GlobalExceptionHandler, neither of which sees exceptions thrown this
+				// early in the chain - as a raw, unhandled error instead of the app's
+				// normal JSON error responses.
 			}
 		}
 
