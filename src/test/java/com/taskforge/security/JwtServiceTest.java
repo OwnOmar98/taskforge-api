@@ -17,6 +17,7 @@ import io.jsonwebtoken.security.SignatureException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JwtServiceTest {
 
@@ -32,6 +33,18 @@ class JwtServiceTest {
 		String token = jwtService.generateAccessToken(userId);
 
 		assertEquals(userId, jwtService.extractUserId(token));
+	}
+
+	@Test
+	void extractsTheExpirationTheTokenWasIssuedWith() {
+		Instant before = Instant.now();
+
+		String token = jwtService.generateAccessToken(UUID.randomUUID());
+
+		// JWT exp has whole-second precision, so allow for the truncation.
+		Instant expiration = jwtService.extractExpiration(token);
+		Instant expected = before.plus(properties.accessTokenTtl());
+		assertTrue(!expiration.isBefore(expected.minusSeconds(1)) && !expiration.isAfter(expected.plusSeconds(1)));
 	}
 
 	@Test

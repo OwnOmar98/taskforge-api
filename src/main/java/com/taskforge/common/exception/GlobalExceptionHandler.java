@@ -15,6 +15,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.taskforge.auth.AuthErrorCode;
@@ -116,6 +117,17 @@ public class GlobalExceptionHandler {
 				.toList();
 		problemDetail.setProperty("errors", errors);
 		return problemDetail;
+	}
+
+	// The client disconnected mid-response - in practice an SSE stream whose
+	// client went away, discovered on the next write. There's nobody left to
+	// send an error to, and the response is already committed as
+	// text/event-stream, so a ProblemDetail couldn't be written anyway.
+	// Returning nothing (rather than falling through to the catch-all below)
+	// is Spring's own documented handling for this exception.
+	@ExceptionHandler(AsyncRequestNotUsableException.class)
+	public void handleClientGone(AsyncRequestNotUsableException ex) {
+		log.debug("Client disconnected before the response completed: {}", ex.getMessage());
 	}
 
 	@ExceptionHandler(Exception.class)

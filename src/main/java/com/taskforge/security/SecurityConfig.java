@@ -26,6 +26,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.taskforge.user.UserRepository;
 
+import jakarta.servlet.DispatcherType;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration
@@ -101,6 +102,15 @@ public class SecurityConfig {
 				.exceptionHandling(exceptions -> exceptions
 						.authenticationEntryPoint(new ProblemDetailAuthenticationEntryPoint(objectMapper)))
 				.authorizeHttpRequests(auth -> auth
+						// The re-dispatches the container makes for an async request
+						// (an SSE stream) aren't new requests - ASYNC when it completes
+						// or times out, ERROR when its client disconnects mid-stream -
+						// they continue one already authorized on arrival. With a
+						// stateless chain there's no session to restore its
+						// SecurityContext from, so without this they'd be denied and
+						// the denial written onto an already-committed stream.
+						.dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR)
+						.permitAll()
 						// A blanket permitAll here is safe, not lax: management.endpoints.web
 						// .exposure.include is the real gate, restricted to health/info/
 						// metrics/prometheus - anything not in that list 404s regardless of

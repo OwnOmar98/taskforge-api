@@ -11,6 +11,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.taskforge.audit.events.TaskStatusChangedEvent;
+import com.taskforge.notification.dto.NotificationResponse;
+import com.taskforge.realtime.UserEventPublisher;
 import com.taskforge.task.Task;
 import com.taskforge.task.TaskRepository;
 import com.taskforge.task.events.TaskAssignedEvent;
@@ -37,12 +39,14 @@ public class NotificationEventListener {
 	private final NotificationRepository notificationRepository;
 	private final TaskRepository taskRepository;
 	private final ObjectMapper objectMapper;
+	private final UserEventPublisher userEventPublisher;
 
 	public NotificationEventListener(NotificationRepository notificationRepository, TaskRepository taskRepository,
-			ObjectMapper objectMapper) {
+			ObjectMapper objectMapper, UserEventPublisher userEventPublisher) {
 		this.notificationRepository = notificationRepository;
 		this.taskRepository = taskRepository;
 		this.objectMapper = objectMapper;
+		this.userEventPublisher = userEventPublisher;
 	}
 
 	@Async("notificationExecutor")
@@ -59,7 +63,7 @@ public class NotificationEventListener {
 			return;
 		}
 
-		String payload = toJson(Map.of("oldStatus", event.oldStatus(), "newStatus", event.newStatus()));
+		Map<String, ?> payload = Map.of("oldStatus", event.oldStatus(), "newStatus", event.newStatus());
 		save(assignee.getId(), task.getProject().getOrganization().getId(), NotificationType.TASK_STATUS_CHANGED,
 				payload);
 	}
@@ -77,7 +81,7 @@ public class NotificationEventListener {
 			return;
 		}
 
-		String payload = toJson(Map.of("taskId", event.taskId()));
+		Map<String, ?> payload = Map.of("taskId", event.taskId());
 		save(event.assigneeId(), task.getProject().getOrganization().getId(), NotificationType.TASK_ASSIGNED,
 				payload);
 	}
@@ -96,17 +100,19 @@ public class NotificationEventListener {
 			return;
 		}
 
-		String payload = toJson(Map.of("taskId", event.taskId(), "commentId", event.commentId()));
+		Map<String, ?> payload = Map.of("taskId", event.taskId(), "commentId", event.commentId());
 		save(assignee.getId(), task.getProject().getOrganization().getId(), NotificationType.TASK_COMMENT_ADDED,
 				payload);
 	}
 
-	private void save(UUID userId, UUID organizationId, NotificationType type, String payload) {
-		notificationRepository.save(new Notification(userId, organizationId, type, payload));
-	}
-
-	private String toJson(Map<String, ?> payload) {
-		return objectMapper.writeValueAsString(payload);
+	// The pushed response is built from the in-memory payload map rather
+	// than read back from the saved row's JSON column - same content, without
+	// a pointless serialize/parse round trip.
+	private void save(UUID userId, UUID organizationId, NotificationType type, Map<String, ?> payload) {
+		Notification notification = notificationRepository
+				.save(new Notification(userId, organizationId, type, objectMapper.writeValueAsString(payload)));
+		userEventPublisher.publishAfterCommit(userId, NotificationReplaySource.toEvent(
+				new NotificationResponse(notification.getId(), type, payload, null, notification.getCreatedAt())));
 	}
 
 }

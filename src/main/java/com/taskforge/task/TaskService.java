@@ -2,8 +2,10 @@ package com.taskforge.task;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -23,6 +25,9 @@ import com.taskforge.common.exception.ResourceNotFoundException;
 import com.taskforge.project.Project;
 import com.taskforge.project.ProjectMemberRepository;
 import com.taskforge.project.ProjectRepository;
+import com.taskforge.realtime.UserEvent;
+import com.taskforge.realtime.UserEventPublisher;
+import com.taskforge.realtime.UserEventType;
 import com.taskforge.task.dto.TaskResponse;
 import com.taskforge.task.dto.TaskSummaryProjection;
 import com.taskforge.task.dto.UpdateTaskRequest;
@@ -42,16 +47,19 @@ public class TaskService {
 	private final UserRepository userRepository;
 	private final ApplicationEventPublisher eventPublisher;
 	private final MeterRegistry meterRegistry;
+	private final UserEventPublisher userEventPublisher;
 
 	public TaskService(TaskRepository taskRepository, ProjectRepository projectRepository,
 			ProjectMemberRepository projectMemberRepository, UserRepository userRepository,
-			ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry) {
+			ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry,
+			UserEventPublisher userEventPublisher) {
 		this.taskRepository = taskRepository;
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
 		this.userRepository = userRepository;
 		this.eventPublisher = eventPublisher;
 		this.meterRegistry = meterRegistry;
+		this.userEventPublisher = userEventPublisher;
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
@@ -128,6 +136,7 @@ public class TaskService {
 	@Transactional
 	public TaskResponse updateTask(UUID projectId, UUID taskId, UpdateTaskRequest request, UUID actorId) {
 		Task task = findTaskInProjectOrThrow(projectId, taskId);
+		User assigneeBefore = task.getAssignee();
 
 		if (!task.getVersion().equals(request.version())) {
 			throw new ConflictException(TaskErrorCode.STALE_TASK_VERSION,
@@ -163,7 +172,35 @@ public class TaskService {
 		// Same reasoning as ProjectService.updateProject: force the version bump
 		// to happen now so the response reflects it, not the stale pre-flush value.
 		taskRepository.flush();
+		// An unchanged version after the flush means nothing was actually
+		// written (every provided field matched its current value), so there's
+		// nothing for anyone to refetch.
+		if (!task.getVersion().equals(request.version())) {
+			publishTaskUpdated(task, projectId, assigneeBefore, actorId);
+		}
 		return toResponse(task, projectId);
+	}
+
+	// A signal, not a notification: it tells the people whose task lists this
+	// change affects to refetch, and isn't recorded anywhere. The previous
+	// assignee is included on a reassignment - the task just left their list.
+	// The actor is skipped for the same reason notifications skip them: they
+	// already have the result in their own response.
+	private void publishTaskUpdated(Task task, UUID projectId, User assigneeBefore, UUID actorId) {
+		Set<UUID> recipients = new HashSet<>();
+		if (assigneeBefore != null) {
+			recipients.add(assigneeBefore.getId());
+		}
+		if (task.getAssignee() != null) {
+			recipients.add(task.getAssignee().getId());
+		}
+		recipients.remove(actorId);
+
+		Map<String, Object> data = Map.of("taskId", task.getId(), "projectId", projectId, "version",
+				task.getVersion());
+		for (UUID recipient : recipients) {
+			userEventPublisher.publishAfterCommit(recipient, UserEvent.signal(UserEventType.TASK_UPDATED, data));
+		}
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")

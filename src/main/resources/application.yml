@@ -109,6 +109,19 @@ app:
       # database round trip, bounding the job's memory use regardless of how
       # many are overdue across every organization on a given day.
       page-size: 500
+  # GET /api/v1/events/stream (Server-Sent Events).
+  realtime:
+    # Comfortably under the ~60s idle timeout common to proxies and load
+    # balancers, which would otherwise silently cut a quiet stream.
+    heartbeat-interval: 25s
+    # Each open stream holds a servlet async request for its whole lifetime;
+    # a handful covers several tabs/devices without letting one account hold
+    # an unbounded number.
+    max-connections-per-user: 5
+    # Past this many missed notifications, a reconnecting client is told to
+    # resync from GET /notifications rather than replaying the backlog down
+    # the stream.
+    replay-limit: 100
   # No frontend origin exists for this project yet; left empty (not a
   # wildcard) so cross-origin browser access stays denied by default.
   cors:

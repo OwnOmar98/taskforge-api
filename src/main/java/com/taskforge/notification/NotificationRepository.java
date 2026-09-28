@@ -44,4 +44,14 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 			@Param("cursorCreatedAt") Instant cursorCreatedAt, @Param("cursorId") UUID cursorId,
 			@Param("limit") int limit);
 
+	// The reverse of findNextPageByUserId: rows strictly newer than a given
+	// (createdAt, id), oldest first - for replaying what a reconnecting
+	// real-time stream missed, in the order it would have seen them live.
+	@Query(value = "select * from notifications where user_id = :userId "
+			+ "and (created_at > :afterCreatedAt or (created_at = :afterCreatedAt and id > :afterId)) "
+			+ "order by created_at asc, id asc limit :limit", nativeQuery = true)
+	List<Notification> findNewerThanByUserId(@Param("userId") UUID userId,
+			@Param("afterCreatedAt") Instant afterCreatedAt, @Param("afterId") UUID afterId,
+			@Param("limit") int limit);
+
 }

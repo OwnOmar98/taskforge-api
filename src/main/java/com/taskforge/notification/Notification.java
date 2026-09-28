@@ -2,6 +2,7 @@ package com.taskforge.notification;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -68,9 +69,13 @@ public class Notification {
 		this.payload = payload;
 	}
 
+	// Truncated to Postgres's own microsecond precision so the value on this
+	// in-memory instance - pushed to real-time streams straight after the
+	// save - matches what reading the row back later returns, instead of
+	// differing in the last few (rounded-off) digits.
 	@PrePersist
 	void onCreate() {
-		this.createdAt = Instant.now();
+		this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 	}
 
 	public void markAsRead() {
