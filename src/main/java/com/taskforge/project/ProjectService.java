@@ -3,6 +3,7 @@ package com.taskforge.project;
 import java.util.Locale;
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -49,7 +50,19 @@ public class ProjectService {
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Organization not found"));
 
-		Project project = projectRepository.save(new Project(organization, normalizedKey, name));
+		Project project;
+		try {
+			// The check above is a point-in-time read, not a lock - two concurrent
+			// creates for the same org+key can both pass it before either commits.
+			// saveAndFlush forces the insert (and the unique constraint it can
+			// violate) to happen synchronously here, not deferred to commit,
+			// where this catch couldn't see it.
+			project = projectRepository.saveAndFlush(new Project(organization, normalizedKey, name));
+		}
+		catch (DataIntegrityViolationException e) {
+			throw new ConflictException(ProjectErrorCode.PROJECT_KEY_IN_USE,
+					ProjectErrorCode.PROJECT_KEY_IN_USE.defaultMessage());
+		}
 
 		User creator = userRepository.findById(creatorUserId).orElseThrow();
 		projectMemberRepository.save(new ProjectMember(project, creator, ProjectMemberRole.LEAD));

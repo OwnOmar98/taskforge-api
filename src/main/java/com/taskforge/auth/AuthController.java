@@ -2,6 +2,7 @@ package com.taskforge.auth;
 
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -76,8 +77,20 @@ public class AuthController {
 			throw new ConflictException(AuthErrorCode.EMAIL_IN_USE, AuthErrorCode.EMAIL_IN_USE.defaultMessage());
 		}
 
-		User user = userRepository.save(
-				new User(request.email(), passwordEncoder.encode(request.password()), request.fullName()));
+		User user;
+		try {
+			// The check above is a point-in-time read, not a lock - two concurrent
+			// registrations for the same email can both pass it before either
+			// commits. The unique constraint on users.email is the real backstop;
+			// catching its violation here keeps the specific EMAIL_IN_USE code
+			// instead of falling through to GlobalExceptionHandler's generic
+			// DataIntegrityViolationException handler.
+			user = userRepository.saveAndFlush(
+					new User(request.email(), passwordEncoder.encode(request.password()), request.fullName()));
+		}
+		catch (DataIntegrityViolationException e) {
+			throw new ConflictException(AuthErrorCode.EMAIL_IN_USE, AuthErrorCode.EMAIL_IN_USE.defaultMessage());
+		}
 
 		if (request.invitationToken() != null && !request.invitationToken().isBlank()) {
 			invitationService.acceptInvitation(request.invitationToken(), user);
