@@ -47,6 +47,20 @@ public class NotificationService {
 		return new CursorPageResponse<>(page.stream().map(this::toResponse).toList(), nextCursor, hasMore);
 	}
 
+	// Empty, not an error, when the anchor isn't one of this user's
+	// notifications: there's nothing to replay from, and a stale or foreign
+	// Last-Event-ID shouldn't block the stream from opening.
+	@Transactional(readOnly = true)
+	public List<NotificationResponse> listNewerThan(UUID userId, UUID afterNotificationId, int limit) {
+		return notificationRepository.findByIdAndUserId(afterNotificationId, userId)
+				.map(anchor -> notificationRepository
+						.findNewerThanByUserId(userId, anchor.getCreatedAt(), anchor.getId(), limit)
+						.stream()
+						.map(this::toResponse)
+						.toList())
+				.orElse(List.of());
+	}
+
 	private List<Notification> fetchAfter(UUID userId, NotificationCursor cursor, int limit) {
 		return notificationRepository.findNextPageByUserId(userId, cursor.createdAt(), cursor.id(), limit);
 	}

@@ -35,12 +35,19 @@ public class JwtService {
 	}
 
 	public UUID extractUserId(String token) {
-		Claims claims = Jwts.parser()
+		return UUID.fromString(parse(token).getSubject());
+	}
+
+	public Instant extractExpiration(String token) {
+		return parse(token).getExpiration().toInstant();
+	}
+
+	private Claims parse(String token) {
+		return Jwts.parser()
 				.verifyWith(key)
 				.build()
 				.parseSignedClaims(token)
 				.getPayload();
-		return UUID.fromString(claims.getSubject());
 	}
 
 }

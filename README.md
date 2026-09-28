@@ -7,7 +7,7 @@ incrementally as a series of independent, reviewable PRs.
 
 - Java 25, Spring Boot 4.1.1 (Spring Framework 7), Maven
 - PostgreSQL + Flyway (versioned migrations, no auto-DDL)
-- Redis (permission-check caching, rate limiting)
+- Redis (permission-check caching, rate limiting, pub/sub fan-out for real-time events)
 - Spring Security / JWT (access + rotating refresh tokens)
 - Resilience4j (retry/circuit breaker/timeout on outbound webhook delivery)
 - S3-compatible object storage (DigitalOcean Spaces in prod; LocalStack/MinIO in tests/local dev)
@@ -18,8 +18,8 @@ incrementally as a series of independent, reviewable PRs.
 ## Current status
 
 Feature-complete: multi-tenant orgs/projects/tasks, JWT auth, role-based permissions, comments,
-labels, attachments, notifications, outbound webhooks, audit logging, observability
-(actuator/metrics/health), a CI pipeline, and full OpenAPI documentation.
+labels, attachments, notifications, a real-time SSE event stream, outbound webhooks, audit logging,
+observability (actuator/metrics/health), a CI pipeline, and full OpenAPI documentation.
 
 ## Running locally
 
@@ -67,6 +67,46 @@ scheme (`Accept: application/vnd.taskforge.v1+json` or a custom `X-API-Version`)
 change a breaking v2 requires, but that tradeoff isn't worth it for an API with no existing v1 clients
 to protect yet. A breaking change would ship as `/api/v2/...`, decided if and when one is actually
 needed.
+
+## Real-time events
+
+`GET /api/v1/events/stream` is one Server-Sent Events stream per user, carrying every kind of
+real-time event, delivered the moment it happens on any app instance (fanned out between instances
+over Redis pub/sub):
+
+```
+curl -N -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/v1/events/stream
+```
+
+The SSE `event:` field is the event type; clients dispatch on it. `data:` is that type's JSON payload.
+
+| `event:`       | `id:`           | `data:`                                               | Sent to                                                                             |
+|----------------|-----------------|-------------------------------------------------------|-------------------------------------------------------------------------------------|
+| `notification` | notification id | same shape as one item of `GET /api/v1/notifications` | the notification's recipient                                                        |
+| `task.updated` | none            | `{taskId, projectId, version}`                        | the task's assignee, plus the previous assignee on a reassignment, never the editor |
+| `resync`       | none            | empty                                                 | a reconnecting client whose missed backlog exceeds `app.realtime.replay-limit`      |
+
+- **Two kinds of event.** *Replayable* events (`notification`) are persisted and carry an `id`.
+  *Signals* (`task.updated`) mean "refetch this", aren't stored and carry no `id`, so they never move
+  the client's last-event-id.
+- **Reconnecting:** send the last received id back as `Last-Event-ID` and missed notifications are
+  replayed, oldest first. Events can occasionally arrive twice around a reconnect, so de-duplicate by
+  id. A missed signal isn't replayed, so refetch whatever view is on screen after reconnecting. On
+  `resync`, reload from the REST endpoints.
+- **Lifetime:** a stream closes when the access token that opened it expires, so reconnect with a
+  refreshed token (and `Last-Event-ID`). Streams also close when an instance shuts down; reconnecting
+  lands on another instance.
+- **Auth** is the usual bearer header. A browser's native `EventSource` can't set headers, so browser
+  clients need a fetch-based SSE client; tokens in the query string are deliberately not accepted.
+- Heartbeat comments are sent every `app.realtime.heartbeat-interval` to keep proxies from closing
+  idle streams. Proxies in front of the app must not buffer `text/event-stream` responses.
+- At most `app.realtime.max-connections-per-user` concurrent streams per user (429 beyond that).
+- Best-effort: the app still boots and serves REST with Redis unreachable, and subscribes in the
+  background once Redis is back.
+- **Adding an event type:** add a constant to `UserEventType` and call
+  `UserEventPublisher.publishAfterCommit(userId, UserEvent.signal(type, data))` where the change
+  happens. Nothing else (Redis subscription, endpoint, registry) needs to change. A second
+  *replayable* type would also need its own `EventReplaySource` and namespaced event ids.
 
 ## Environment variables
 
