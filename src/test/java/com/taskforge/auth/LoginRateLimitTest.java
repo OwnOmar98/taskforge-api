@@ -114,4 +114,39 @@ class LoginRateLimitTest {
 				.andExpect(status().isUnauthorized());
 	}
 
+	// app.rate-limit.login.trust-forwarded-for isn't set here, so it's false
+	// (RateLimitProperties' own default) - a client-supplied X-Forwarded-For
+	// must be ignored entirely, or an attacker could spoof a unique value per
+	// request to bypass the limit outright. See
+	// LoginRateLimitTrustForwardedForTest for the opt-in behavior.
+	@Test
+	void aSpoofedForwardedForHeaderIsIgnoredByDefault() throws Exception {
+		for (int i = 0; i < 3; i++) {
+			mockMvc.perform(post("/api/v1/auth/login")
+							.with(request -> {
+								request.setRemoteAddr("10.0.0.3");
+								return request;
+							})
+							.header("X-Forwarded-For", "1.2.3." + i)
+							.contentType(MediaType.APPLICATION_JSON)
+							.content(objectMapper.writeValueAsString(
+									new LoginRequest("spoof" + i + "@acme.test", "whatever123"))))
+					.andExpect(status().isUnauthorized());
+		}
+
+		// A 4th, still-different X-Forwarded-For value from the same
+		// (simulated) remote address must still be rejected - proving the
+		// header had no effect on which bucket these requests landed in.
+		mockMvc.perform(post("/api/v1/auth/login")
+						.with(request -> {
+							request.setRemoteAddr("10.0.0.3");
+							return request;
+						})
+						.header("X-Forwarded-For", "1.2.3.99")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(
+								new LoginRequest("spoof-over-limit@acme.test", "whatever123"))))
+				.andExpect(status().isTooManyRequests());
+	}
+
 }

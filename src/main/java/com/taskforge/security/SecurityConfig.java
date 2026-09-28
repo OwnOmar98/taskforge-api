@@ -72,7 +72,8 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtService jwtService,
 			UserRepository userRepository, LoginRateLimiter loginRateLimiter, ObjectMapper objectMapper,
-			CorsConfigurationSource corsConfigurationSource) throws Exception {
+			CorsConfigurationSource corsConfigurationSource, RateLimitProperties rateLimitProperties)
+			throws Exception {
 		http
 				// No cookie-based session exists for CSRF to protect; auth is a bearer
 				// token the client attaches itself. That would change if refresh tokens
@@ -117,7 +118,8 @@ public class SecurityConfig {
 				// the limit should never reach the BCrypt-verifying authenticate()
 				// call in AuthController - that work is deliberately slow, and doing
 				// it anyway for a request we're about to reject just wastes it.
-				.addFilterBefore(new RateLimitFilter(loginRateLimiter, objectMapper), JwtAuthenticationFilter.class);
+				.addFilterBefore(new RateLimitFilter(loginRateLimiter, objectMapper, rateLimitProperties),
+						JwtAuthenticationFilter.class);
 
 		return http.build();
 	}

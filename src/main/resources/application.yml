@@ -93,6 +93,11 @@ app:
     login:
       max-attempts: 10
       window: 1m
+      # Off by default - see RateLimitProperties for why. Deployments behind
+      # a reverse proxy that's actually configured to overwrite/strip a
+      # client-supplied X-Forwarded-For should override this to true in
+      # their own environment config, not here.
+      trust-forwarded-for: false
   # Per-account, protects one target from credential stuffing distributed
   # across many source IPs - complements, doesn't duplicate, the rate limit.
   login-lockout:

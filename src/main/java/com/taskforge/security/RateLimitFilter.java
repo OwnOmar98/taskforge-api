@@ -24,17 +24,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
 	private final LoginRateLimiter rateLimiter;
 	private final ObjectMapper objectMapper;
+	private final RateLimitProperties properties;
 
-	public RateLimitFilter(LoginRateLimiter rateLimiter, ObjectMapper objectMapper) {
+	public RateLimitFilter(LoginRateLimiter rateLimiter, ObjectMapper objectMapper, RateLimitProperties properties) {
 		this.rateLimiter = rateLimiter;
 		this.objectMapper = objectMapper;
+		this.properties = properties;
 	}
 
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
 		if (PROTECTED_PATH.equals(request.getRequestURI())) {
-			RateLimitResult result = rateLimiter.tryAcquire(request.getRemoteAddr());
+			RateLimitResult result = rateLimiter.tryAcquire(clientIp(request));
 			if (!result.allowed()) {
 				writeTooManyRequests(response, result.retryAfterSeconds());
 				return;
@@ -42,6 +44,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
 		}
 
 		filterChain.doFilter(request, response);
+	}
+
+	// getRemoteAddr() is the immediate TCP peer, which behind any reverse
+	// proxy or load balancer is the proxy itself - every real client would
+	// then share one rate-limit bucket. X-Forwarded-For's first entry is the
+	// original client per the header's own convention (client, proxy1,
+	// proxy2, ...), but only trustworthy when app.rate-limit.login
+	// .trust-forwarded-for is explicitly enabled - see RateLimitProperties.
+	private String clientIp(HttpServletRequest request) {
+		if (properties.trustForwardedFor()) {
+			String header = request.getHeader("X-Forwarded-For");
+			if (header != null && !header.isBlank()) {
+				return header.split(",")[0].strip();
+			}
+		}
+		return request.getRemoteAddr();
 	}
 
 	private void writeTooManyRequests(HttpServletResponse response, long retryAfterSeconds) throws IOException {
