@@ -119,11 +119,14 @@ class TaskCommentControllerTest {
 		UUID orgId = createOrganization(ownerToken, "Acme3");
 		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
 		UUID taskId = createTask(projectId, ownerToken, "Ship it");
-		String viewerToken = addProjectMemberAndGetToken(orgId, projectId, "viewer3@acme.test",
-				ProjectMemberRole.VIEWER);
+		// CONTRIBUTOR, not VIEWER: VIEWER is read-only and can't create a
+		// comment at all - CONTRIBUTOR is the lowest role that can write,
+		// which is what "without any privileged [i.e. LEAD/MANAGE] role" means.
+		String contributorToken = addProjectMemberAndGetToken(orgId, projectId, "contributor3@acme.test",
+				ProjectMemberRole.CONTRIBUTOR);
 
 		MvcResult result = mockMvc.perform(post("/api/v1/tasks/" + taskId + "/comments")
-						.header("Authorization", "Bearer " + viewerToken)
+						.header("Authorization", "Bearer " + contributorToken)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsString(new CreateCommentRequest("My own comment"))))
 				.andExpect(status().isCreated())
@@ -132,7 +135,7 @@ class TaskCommentControllerTest {
 				objectMapper.readTree(result.getResponse().getContentAsString()).get("id").stringValue());
 
 		mockMvc.perform(delete("/api/v1/tasks/" + taskId + "/comments/" + commentId)
-						.header("Authorization", "Bearer " + viewerToken))
+						.header("Authorization", "Bearer " + contributorToken))
 				.andExpect(status().isNoContent());
 	}
 

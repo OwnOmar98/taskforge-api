@@ -33,7 +33,7 @@ public class TaskCommentService {
 		this.eventPublisher = eventPublisher;
 	}
 
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public TaskCommentResponse addComment(UUID taskId, String body, UUID authorId) {
 		Task task = findTaskOrThrow(taskId);

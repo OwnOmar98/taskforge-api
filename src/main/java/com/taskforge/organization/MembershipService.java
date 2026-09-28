@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.taskforge.audit.events.MemberRoleChangedEvent;
+import com.taskforge.common.AfterCommit;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
@@ -62,7 +63,10 @@ public class MembershipService {
 		}
 		// Mandatory, not a nice-to-have: a stale cached role surviving until TTL
 		// expiry after a demotion is a real security bug, not a performance nit.
-		membershipRoleCacheService.evict(organizationId, targetUserId);
+		// Deferred to after commit - evicting while the row's own UPDATE is
+		// still uncommitted lets a concurrent read repopulate the cache with
+		// the pre-change role before anything evicts it again.
+		AfterCommit.run(() -> membershipRoleCacheService.evict(organizationId, targetUserId));
 		return toResponse(membership);
 	}
 
@@ -77,7 +81,7 @@ public class MembershipService {
 		}
 
 		membershipRepository.delete(membership);
-		membershipRoleCacheService.evict(organizationId, targetUserId);
+		AfterCommit.run(() -> membershipRoleCacheService.evict(organizationId, targetUserId));
 	}
 
 	private Membership findMembershipOrThrow(UUID organizationId, UUID userId) {

@@ -53,7 +53,7 @@ public class LabelService {
 		return PageResponse.from(page.map(this::toResponse));
 	}
 
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public void attachLabel(UUID taskId, UUID labelId) {
 		Task task = findTaskOrThrow(taskId);
@@ -66,7 +66,7 @@ public class LabelService {
 		task.getLabels().add(label);
 	}
 
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public void detachLabel(UUID taskId, UUID labelId) {
 		Task task = findTaskOrThrow(taskId);

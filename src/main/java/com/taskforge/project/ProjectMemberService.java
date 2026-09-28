@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.AfterCommit;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
@@ -69,7 +70,8 @@ public class ProjectMemberService {
 
 		// Unlike a brand-new project, this one already existed, so a prior
 		// "not a member" lookup for this exact pair could already be cached.
-		projectMemberRoleCacheService.evict(projectId, targetUserId);
+		// Deferred to after commit - see MembershipService.changeRole.
+		AfterCommit.run(() -> projectMemberRoleCacheService.evict(projectId, targetUserId));
 
 		return toResponse(member);
 	}
@@ -83,7 +85,8 @@ public class ProjectMemberService {
 		member.changeRole(newRole);
 		// Mandatory, not a nice-to-have: a stale cached role surviving until TTL
 		// expiry after a demotion is a real security bug, not a performance nit.
-		projectMemberRoleCacheService.evict(projectId, targetUserId);
+		// Deferred to after commit - see MembershipService.changeRole.
+		AfterCommit.run(() -> projectMemberRoleCacheService.evict(projectId, targetUserId));
 		return toResponse(member);
 	}
 
@@ -92,7 +95,7 @@ public class ProjectMemberService {
 	public void removeMember(UUID organizationId, UUID projectId, UUID targetUserId) {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
 		projectMemberRepository.delete(findMemberOrThrow(projectId, targetUserId));
-		projectMemberRoleCacheService.evict(projectId, targetUserId);
+		AfterCommit.run(() -> projectMemberRoleCacheService.evict(projectId, targetUserId));
 	}
 
 	private ProjectMember findMemberOrThrow(UUID projectId, UUID userId) {

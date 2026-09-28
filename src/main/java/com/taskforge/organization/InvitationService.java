@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.common.AfterCommit;
 import com.taskforge.common.EmailNormalizer;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
@@ -107,8 +108,9 @@ public class InvitationService {
 		// "not a member" lookup for this exact pair could already be cached -
 		// e.g. this user tried an org route before accepting and got denied.
 		// Without evicting, that stale negative result would keep denying them
-		// until it expires.
-		membershipRoleCacheService.evict(organizationId, currentUser.getId());
+		// until it expires. Deferred to after commit - see
+		// MembershipService.changeRole.
+		AfterCommit.run(() -> membershipRoleCacheService.evict(organizationId, currentUser.getId()));
 
 		return new MemberResponse(currentUser.getId(), currentUser.getEmail(), currentUser.getFullName(),
 				membership.getRole());
