@@ -30,7 +30,7 @@ class RefreshTokenServiceTest {
 		User user = new User("expired@acme.test", "hash", "Someone");
 		RefreshToken expired = new RefreshToken(user, "some-hash", Instant.now().minusSeconds(1));
 
-		when(refreshTokenRepository.findByTokenHash(any())).thenReturn(Optional.of(expired));
+		when(refreshTokenRepository.findByTokenHashForUpdate(any())).thenReturn(Optional.of(expired));
 
 		assertThrows(UnauthorizedException.class, () -> service.rotate("raw-token-value"));
 	}
@@ -44,7 +44,7 @@ class RefreshTokenServiceTest {
 		RefreshToken revoked = new RefreshToken(user, "some-hash", Instant.now().plusSeconds(3600));
 		revoked.revoke(null);
 
-		when(refreshTokenRepository.findByTokenHash(any())).thenReturn(Optional.of(revoked));
+		when(refreshTokenRepository.findByTokenHashForUpdate(any())).thenReturn(Optional.of(revoked));
 
 		assertThrows(UnauthorizedException.class, () -> service.rotate("raw-token-value"));
 	}
