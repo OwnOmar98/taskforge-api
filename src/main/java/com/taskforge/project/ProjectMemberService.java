@@ -2,12 +2,16 @@ package com.taskforge.project;
 
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.audit.events.ProjectMemberAddedEvent;
+import com.taskforge.audit.events.ProjectMemberRemovedEvent;
+import com.taskforge.audit.events.ProjectMemberRoleChangedEvent;
 import com.taskforge.common.AfterCommit;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
@@ -26,15 +30,17 @@ public class ProjectMemberService {
 	private final MembershipRepository membershipRepository;
 	private final UserRepository userRepository;
 	private final ProjectMemberRoleCacheService projectMemberRoleCacheService;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public ProjectMemberService(ProjectService projectService, ProjectMemberRepository projectMemberRepository,
 			MembershipRepository membershipRepository, UserRepository userRepository,
-			ProjectMemberRoleCacheService projectMemberRoleCacheService) {
+			ProjectMemberRoleCacheService projectMemberRoleCacheService, ApplicationEventPublisher eventPublisher) {
 		this.projectService = projectService;
 		this.projectMemberRepository = projectMemberRepository;
 		this.membershipRepository = membershipRepository;
 		this.userRepository = userRepository;
 		this.projectMemberRoleCacheService = projectMemberRoleCacheService;
+		this.eventPublisher = eventPublisher;
 	}
 
 	// No @PreAuthorize: TenantInterceptor already requires org membership for
@@ -50,7 +56,7 @@ public class ProjectMemberService {
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
 	@Transactional
 	public ProjectMemberResponse addMember(UUID organizationId, UUID projectId, UUID targetUserId,
-			ProjectMemberRole role) {
+			ProjectMemberRole role, UUID actorId) {
 		Project project = projectService.findProjectInOrgOrThrow(organizationId, projectId);
 
 		boolean isOrgMember = membershipRepository.findByOrganization_IdAndUser_Id(organizationId, targetUserId)
@@ -68,6 +74,13 @@ public class ProjectMemberService {
 		User targetUser = userRepository.findById(targetUserId).orElseThrow();
 		ProjectMember member = projectMemberRepository.save(new ProjectMember(project, targetUser, role));
 
+		// Granting a role - including LEAD, itself a privilege-escalation vector
+		// via canManageProject - is exactly the kind of access change that
+		// belongs in the audit trail, same reasoning as MemberRoleChangedEvent
+		// at the org level.
+		eventPublisher
+				.publishEvent(new ProjectMemberAddedEvent(organizationId, actorId, projectId, targetUserId, role));
+
 		// Unlike a brand-new project, this one already existed, so a prior
 		// "not a member" lookup for this exact pair could already be cached.
 		// Deferred to after commit - see MembershipService.changeRole.
@@ -79,10 +92,16 @@ public class ProjectMemberService {
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
 	@Transactional
 	public ProjectMemberResponse changeRole(UUID organizationId, UUID projectId, UUID targetUserId,
-			ProjectMemberRole newRole) {
+			ProjectMemberRole newRole, UUID actorId) {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
 		ProjectMember member = findMemberOrThrow(projectId, targetUserId);
+		ProjectMemberRole oldRole = member.getRole();
 		member.changeRole(newRole);
+		if (newRole != oldRole) {
+			eventPublisher.publishEvent(
+					new ProjectMemberRoleChangedEvent(organizationId, actorId, projectId, targetUserId, oldRole,
+							newRole));
+		}
 		// Mandatory, not a nice-to-have: a stale cached role surviving until TTL
 		// expiry after a demotion is a real security bug, not a performance nit.
 		// Deferred to after commit - see MembershipService.changeRole.
@@ -92,9 +111,13 @@ public class ProjectMemberService {
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
 	@Transactional
-	public void removeMember(UUID organizationId, UUID projectId, UUID targetUserId) {
+	public void removeMember(UUID organizationId, UUID projectId, UUID targetUserId, UUID actorId) {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
-		projectMemberRepository.delete(findMemberOrThrow(projectId, targetUserId));
+		ProjectMember member = findMemberOrThrow(projectId, targetUserId);
+		ProjectMemberRole removedRole = member.getRole();
+		projectMemberRepository.delete(member);
+		eventPublisher.publishEvent(
+				new ProjectMemberRemovedEvent(organizationId, actorId, projectId, targetUserId, removedRole));
 		AfterCommit.run(() -> projectMemberRoleCacheService.evict(projectId, targetUserId));
 	}
 

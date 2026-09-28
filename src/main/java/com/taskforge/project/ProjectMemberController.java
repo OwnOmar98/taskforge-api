@@ -20,6 +20,7 @@ import com.taskforge.common.PageResponse;
 import com.taskforge.project.dto.AddProjectMemberRequest;
 import com.taskforge.project.dto.ChangeProjectMemberRoleRequest;
 import com.taskforge.project.dto.ProjectMemberResponse;
+import com.taskforge.security.CurrentUserId;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -47,22 +48,24 @@ public class ProjectMemberController {
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public ProjectMemberResponse add(@PathVariable UUID orgId, @PathVariable UUID projectId,
-			@Valid @RequestBody AddProjectMemberRequest request) {
-		return projectMemberService.addMember(orgId, projectId, request.userId(), request.role());
+			@Valid @RequestBody AddProjectMemberRequest request, @CurrentUserId UUID currentUserId) {
+		return projectMemberService.addMember(orgId, projectId, request.userId(), request.role(), currentUserId);
 	}
 
 	@Operation(summary = "Change a project member's role")
 	@PatchMapping("/{userId}")
 	public ProjectMemberResponse changeRole(@PathVariable UUID orgId, @PathVariable UUID projectId,
-			@PathVariable UUID userId, @Valid @RequestBody ChangeProjectMemberRoleRequest request) {
-		return projectMemberService.changeRole(orgId, projectId, userId, request.role());
+			@PathVariable UUID userId, @Valid @RequestBody ChangeProjectMemberRoleRequest request,
+			@CurrentUserId UUID currentUserId) {
+		return projectMemberService.changeRole(orgId, projectId, userId, request.role(), currentUserId);
 	}
 
 	@Operation(summary = "Remove a member from a project")
 	@DeleteMapping("/{userId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void remove(@PathVariable UUID orgId, @PathVariable UUID projectId, @PathVariable UUID userId) {
-		projectMemberService.removeMember(orgId, projectId, userId);
+	public void remove(@PathVariable UUID orgId, @PathVariable UUID projectId, @PathVariable UUID userId,
+			@CurrentUserId UUID currentUserId) {
+		projectMemberService.removeMember(orgId, projectId, userId, currentUserId);
 	}
 
 }

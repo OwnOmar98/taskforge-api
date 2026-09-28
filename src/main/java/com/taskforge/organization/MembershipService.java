@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.taskforge.audit.events.MemberRoleChangedEvent;
+import com.taskforge.audit.events.MembershipRemovedEvent;
 import com.taskforge.common.AfterCommit;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
@@ -72,7 +73,7 @@ public class MembershipService {
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
 	@Transactional
-	public void removeMember(UUID organizationId, UUID targetUserId) {
+	public void removeMember(UUID organizationId, UUID targetUserId, UUID actorId) {
 		Membership membership = findMembershipOrThrow(organizationId, targetUserId);
 
 		if (membership.getRole() == MembershipRole.OWNER) {
@@ -80,7 +81,9 @@ public class MembershipService {
 					OrganizationErrorCode.CANNOT_MODIFY_OWNER_ROLE.defaultMessage());
 		}
 
+		MembershipRole removedRole = membership.getRole();
 		membershipRepository.delete(membership);
+		eventPublisher.publishEvent(new MembershipRemovedEvent(organizationId, actorId, targetUserId, removedRole));
 		AfterCommit.run(() -> membershipRoleCacheService.evict(organizationId, targetUserId));
 	}
 

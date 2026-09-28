@@ -26,6 +26,13 @@ import com.taskforge.organization.Organization;
 import com.taskforge.organization.OrganizationRepository;
 import com.taskforge.organization.dto.ChangeRoleRequest;
 import com.taskforge.organization.dto.CreateOrganizationRequest;
+import com.taskforge.project.Project;
+import com.taskforge.project.ProjectMember;
+import com.taskforge.project.ProjectMemberRepository;
+import com.taskforge.project.ProjectMemberRole;
+import com.taskforge.project.ProjectRepository;
+import com.taskforge.project.dto.AddProjectMemberRequest;
+import com.taskforge.project.dto.ChangeProjectMemberRoleRequest;
 import com.taskforge.project.dto.CreateProjectRequest;
 import com.taskforge.task.TaskPriority;
 import com.taskforge.task.TaskStatus;
@@ -36,6 +43,7 @@ import com.taskforge.user.UserRepository;
 
 import tools.jackson.databind.ObjectMapper;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -71,6 +79,12 @@ class AuditLogControllerTest {
 
 	@Autowired
 	private MembershipRepository membershipRepository;
+
+	@Autowired
+	private ProjectRepository projectRepository;
+
+	@Autowired
+	private ProjectMemberRepository projectMemberRepository;
 
 	@Test
 	void changingATaskStatusCreatesAnAuditLogEntry() throws Exception {
@@ -116,6 +130,99 @@ class AuditLogControllerTest {
 				.andExpect(jsonPath("$.content[0].entityId").value(member.getId().toString()))
 				.andExpect(jsonPath("$.content[0].metadata.oldRole").value("MEMBER"))
 				.andExpect(jsonPath("$.content[0].metadata.newRole").value("ADMIN"));
+	}
+
+	@Test
+	void addingAProjectMemberCreatesAnAuditLogEntry() throws Exception {
+		String ownerToken = registerAndGetToken("owner5@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme5");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+		User member = addMember(orgId, "member5@acme.test", MembershipRole.MEMBER);
+
+		mockMvc.perform(post("/api/v1/organizations/" + orgId + "/projects/" + projectId + "/members")
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper
+								.writeValueAsString(new AddProjectMemberRequest(member.getId(), ProjectMemberRole.CONTRIBUTOR))))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/audit-logs")
+						.header("Authorization", "Bearer " + ownerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].action").value("PROJECT_MEMBER_ADDED"))
+				.andExpect(jsonPath("$.content[0].entityId").value(member.getId().toString()))
+				.andExpect(jsonPath("$.content[0].metadata.projectId").value(projectId.toString()))
+				.andExpect(jsonPath("$.content[0].metadata.role").value("CONTRIBUTOR"));
+	}
+
+	@Test
+	void changingAProjectMembersRoleCreatesAnAuditLogEntry() throws Exception {
+		String ownerToken = registerAndGetToken("owner6@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme6");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+		User member = addMember(orgId, "member6@acme.test", MembershipRole.MEMBER);
+		directlyAddProjectMember(projectId, member, ProjectMemberRole.CONTRIBUTOR);
+
+		mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/projects/" + projectId + "/members/"
+						+ member.getId())
+						.header("Authorization", "Bearer " + ownerToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(
+								objectMapper.writeValueAsString(new ChangeProjectMemberRoleRequest(ProjectMemberRole.LEAD))))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/audit-logs")
+						.header("Authorization", "Bearer " + ownerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].action").value("PROJECT_MEMBER_ROLE_CHANGED"))
+				.andExpect(jsonPath("$.content[0].entityId").value(member.getId().toString()))
+				.andExpect(jsonPath("$.content[0].metadata.projectId").value(projectId.toString()))
+				.andExpect(jsonPath("$.content[0].metadata.oldRole").value("CONTRIBUTOR"))
+				.andExpect(jsonPath("$.content[0].metadata.newRole").value("LEAD"));
+	}
+
+	@Test
+	void removingAProjectMemberCreatesAnAuditLogEntry() throws Exception {
+		String ownerToken = registerAndGetToken("owner7@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme7");
+		UUID projectId = createProject(orgId, ownerToken, "eng", "Engine");
+		User member = addMember(orgId, "member7@acme.test", MembershipRole.MEMBER);
+		directlyAddProjectMember(projectId, member, ProjectMemberRole.CONTRIBUTOR);
+
+		mockMvc.perform(delete("/api/v1/organizations/" + orgId + "/projects/" + projectId + "/members/"
+						+ member.getId())
+						.header("Authorization", "Bearer " + ownerToken))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/audit-logs")
+						.header("Authorization", "Bearer " + ownerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].action").value("PROJECT_MEMBER_REMOVED"))
+				.andExpect(jsonPath("$.content[0].entityId").value(member.getId().toString()))
+				.andExpect(jsonPath("$.content[0].metadata.projectId").value(projectId.toString()))
+				.andExpect(jsonPath("$.content[0].metadata.role").value("CONTRIBUTOR"));
+	}
+
+	@Test
+	void removingAnOrgMemberCreatesAnAuditLogEntry() throws Exception {
+		String ownerToken = registerAndGetToken("owner8@acme.test");
+		UUID orgId = createOrganization(ownerToken, "Acme8");
+		User member = addMember(orgId, "member8@acme.test", MembershipRole.MEMBER);
+
+		mockMvc.perform(delete("/api/v1/organizations/" + orgId + "/members/" + member.getId())
+						.header("Authorization", "Bearer " + ownerToken))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(get("/api/v1/organizations/" + orgId + "/audit-logs")
+						.header("Authorization", "Bearer " + ownerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].action").value("MEMBER_REMOVED"))
+				.andExpect(jsonPath("$.content[0].entityId").value(member.getId().toString()))
+				.andExpect(jsonPath("$.content[0].metadata.role").value("MEMBER"));
 	}
 
 	@Test
@@ -185,6 +292,14 @@ class AuditLogControllerTest {
 
 		return UUID.fromString(
 				objectMapper.readTree(result.getResponse().getContentAsString()).get("id").stringValue());
+	}
+
+	// Direct repository write, not the real add-member endpoint - same
+	// reasoning as addMember below: setup that must not itself add an entry
+	// to the audit log the test is about to assert on.
+	private void directlyAddProjectMember(UUID projectId, User user, ProjectMemberRole role) {
+		Project project = projectRepository.findById(projectId).orElseThrow();
+		projectMemberRepository.saveAndFlush(new ProjectMember(project, user, role));
 	}
 
 	private User addMember(UUID organizationId, String email, MembershipRole role) throws Exception {

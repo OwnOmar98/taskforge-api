@@ -52,8 +52,8 @@ public class MembershipController {
 	@Operation(summary = "Remove a member from an organization")
 	@DeleteMapping("/{userId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void remove(@PathVariable UUID orgId, @PathVariable UUID userId) {
-		membershipService.removeMember(orgId, userId);
+	public void remove(@PathVariable UUID orgId, @PathVariable UUID userId, @CurrentUserId UUID currentUserId) {
+		membershipService.removeMember(orgId, userId, currentUserId);
 	}
 
 }
