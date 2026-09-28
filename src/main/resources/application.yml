@@ -44,9 +44,15 @@ management:
           include: livenessState
 
 resilience4j:
+  # "configs.default" (a config template), not "instances.webhook" (one
+  # literal named instance): WebhookSender resolves a per-organization
+  # instance name at runtime (registries can't be pre-populated with a name
+  # that doesn't exist until a webhook for that org is actually sent), and
+  # any instance a registry creates on first use with no matching
+  # instances.<name> block falls back to this default template.
   retry:
-    instances:
-      webhook:
+    configs:
+      default:
         max-attempts: 3
         wait-duration: 500ms
         # Retrying a call the circuit breaker already refused would just
@@ -55,16 +61,16 @@ resilience4j:
         ignore-exceptions:
           - io.github.resilience4j.circuitbreaker.CallNotPermittedException
   circuitbreaker:
-    instances:
-      webhook:
+    configs:
+      default:
         sliding-window-size: 10
         minimum-number-of-calls: 5
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3
   timelimiter:
-    instances:
-      webhook:
+    configs:
+      default:
         timeout-duration: 5s
 
 app:

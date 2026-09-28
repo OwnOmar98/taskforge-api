@@ -1,5 +1,7 @@
 package com.taskforge.integration;
 
+import java.util.List;
+
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.stereotype.Component;
@@ -17,8 +19,17 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 // "DEGRADED" is safely excluded from the overall aggregate status/HTTP code
 // while still showing up as its own component. It's also deliberately left
 // out of the readiness group in application.yml for the same reason.
+//
+// WebhookSender uses one circuit breaker per organization ("webhook-{orgId}",
+// created lazily on that org's first delivery), not one shared "webhook"
+// instance - checking every instance whose name has that prefix is what
+// makes this indicator still mean something after that change: a single
+// hardcoded lookup would either never find anything, or find a breaker some
+// unrelated code path happened to create under the same name.
 @Component
 public class WebhookDeliveryHealthIndicator implements HealthIndicator {
+
+	private static final String INSTANCE_NAME_PREFIX = "webhook-";
 
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
 
@@ -28,12 +39,15 @@ public class WebhookDeliveryHealthIndicator implements HealthIndicator {
 
 	@Override
 	public Health health() {
-		CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("webhook");
+		List<String> openFor = circuitBreakerRegistry.getAllCircuitBreakers().stream()
+				.filter(circuitBreaker -> circuitBreaker.getName().startsWith(INSTANCE_NAME_PREFIX))
+				.filter(circuitBreaker -> circuitBreaker.getState() == CircuitBreaker.State.OPEN)
+				.map(CircuitBreaker::getName)
+				.toList();
 
-		if (circuitBreaker.getState() == CircuitBreaker.State.OPEN) {
+		if (!openFor.isEmpty()) {
 			return Health.status("DEGRADED")
-					.withDetail("circuitBreaker", "webhook")
-					.withDetail("state", circuitBreaker.getState().name())
+					.withDetail("openCircuitBreakers", openFor)
 					.build();
 		}
 

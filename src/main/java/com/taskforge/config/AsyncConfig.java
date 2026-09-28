@@ -1,6 +1,8 @@
 package com.taskforge.config;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +44,22 @@ public class AsyncConfig {
 		configureGracefulShutdown(executor);
 		executor.initialize();
 		return executor;
+	}
+
+	// WebhookSender composes Retry/CircuitBreaker/TimeLimiter programmatically
+	// (per-organization instance names, which the declarative @Retry/
+	// @CircuitBreaker/@TimeLimiter annotations can't express - their `name` is
+	// a compile-time constant) - their async decorators need a scheduler to
+	// run retry backoff and timeout callbacks on, distinct from webhookExecutor
+	// which runs the actual HTTP call itself. Single-threaded: these callbacks
+	// are lightweight scheduling work, not the call, so they don't need a pool.
+	@Bean(name = "webhookResilienceScheduler")
+	public ScheduledExecutorService webhookResilienceScheduler() {
+		return Executors.newSingleThreadScheduledExecutor(runnable -> {
+			Thread thread = new Thread(runnable, "webhook-resilience");
+			thread.setDaemon(true);
+			return thread;
+		});
 	}
 
 	// server.shutdown=graceful only covers the web server itself (stop

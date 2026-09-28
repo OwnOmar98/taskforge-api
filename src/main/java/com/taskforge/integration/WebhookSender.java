@@ -6,7 +6,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Supplier;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -21,23 +24,33 @@ import org.springframework.web.client.RestClient;
 import com.taskforge.audit.AuditLog;
 import com.taskforge.audit.AuditLogRepository;
 
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
-import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryRegistry;
+import io.github.resilience4j.timelimiter.TimeLimiter;
+import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 
-// Resilience4j's Spring AOP aspect order is fixed, not based on annotation
-// declaration order: Retry wraps CircuitBreaker wraps TimeLimiter wraps the
-// call. That's exactly the shape a webhook delivery needs - each retry
-// attempt re-enters the circuit breaker (so once it's open, further retries
-// fail fast instead of making real calls, and "webhook.retry.ignore-
-// exceptions" in application.yml stops Retry from burning attempts on that
-// fail-fast response), and TimeLimiter bounds each individual attempt's
-// duration rather than the whole retry sequence. The fallback belongs on
-// @Retry specifically, not @CircuitBreaker or @TimeLimiter: a fallback on
-// one of the inner two would swallow the failure into a normally-completed
-// future before Retry ever saw it, so there'd be nothing left to retry.
+// Retry/CircuitBreaker/TimeLimiter are composed programmatically here, not
+// via @Retry/@CircuitBreaker/@TimeLimiter: those annotations take a `name`
+// that must be a compile-time constant, so a single shared "webhook" instance
+// - one circuit breaker, retry budget, and sliding failure window for every
+// organization's webhooks combined - meant one organization's failing
+// endpoint could trip the breaker for every other organization's healthy one
+// too. Each instance here is keyed by organization id instead, resolved from
+// its registry (creating it on first use, configured from the same
+// resilience4j.*.configs.default block the single shared instance used to
+// read from directly). Composition order is unchanged - Retry wraps
+// CircuitBreaker wraps TimeLimiter wraps the call - built from the inside out
+// since each decorateCompletionStage() call wraps whatever supplier it's
+// given. The fallback (record the failure, same as the old
+// @Retry(fallbackMethod=...)) is attached to the outermost (Retry) future via
+// exceptionally() - same effect as requiring the annotation-based fallback to
+// sit specifically on @Retry, just achieved by composition position instead
+// of annotation placement: anything that reaches here already means retries
+// are exhausted, the circuit was open, or the time limit was hit.
 @Component
 public class WebhookSender {
 
@@ -47,22 +60,32 @@ public class WebhookSender {
 	private final AuditLogRepository auditLogRepository;
 	private final ObjectMapper objectMapper;
 	private final Executor webhookExecutor;
+	private final ScheduledExecutorService webhookResilienceScheduler;
 	private final MeterRegistry meterRegistry;
+	private final CircuitBreakerRegistry circuitBreakerRegistry;
+	private final RetryRegistry retryRegistry;
+	private final TimeLimiterRegistry timeLimiterRegistry;
 
 	public WebhookSender(AuditLogRepository auditLogRepository, ObjectMapper objectMapper,
-			@Qualifier("webhookExecutor") Executor webhookExecutor, MeterRegistry meterRegistry) {
+			@Qualifier("webhookExecutor") Executor webhookExecutor,
+			@Qualifier("webhookResilienceScheduler") ScheduledExecutorService webhookResilienceScheduler,
+			MeterRegistry meterRegistry, CircuitBreakerRegistry circuitBreakerRegistry, RetryRegistry retryRegistry,
+			TimeLimiterRegistry timeLimiterRegistry) {
 		this.restClient = RestClient.create();
 		this.auditLogRepository = auditLogRepository;
 		this.objectMapper = objectMapper;
 		this.webhookExecutor = webhookExecutor;
+		this.webhookResilienceScheduler = webhookResilienceScheduler;
 		this.meterRegistry = meterRegistry;
+		this.circuitBreakerRegistry = circuitBreakerRegistry;
+		this.retryRegistry = retryRegistry;
+		this.timeLimiterRegistry = timeLimiterRegistry;
 	}
 
-	@Retry(name = "webhook", fallbackMethod = "sendFallback")
-	@CircuitBreaker(name = "webhook")
-	@TimeLimiter(name = "webhook")
 	public CompletableFuture<Void> send(Webhook webhook, String payload, String idempotencyKey) {
-		return CompletableFuture.runAsync(() -> {
+		String instanceName = "webhook-" + webhook.getOrganizationId();
+
+		Supplier<CompletionStage<Void>> call = () -> CompletableFuture.runAsync(() -> {
 			String signature = sign(webhook.getSecret(), payload);
 
 			restClient.post()
@@ -74,15 +97,26 @@ public class WebhookSender {
 					.retrieve()
 					.toBodilessEntity();
 		}, webhookExecutor);
+
+		Supplier<CompletionStage<Void>> timeLimited = TimeLimiter.decorateCompletionStage(
+				timeLimiterRegistry.timeLimiter(instanceName), webhookResilienceScheduler, call);
+
+		Supplier<CompletionStage<Void>> circuitBroken = CircuitBreaker
+				.decorateCompletionStage(circuitBreakerRegistry.circuitBreaker(instanceName), timeLimited);
+
+		Supplier<CompletionStage<Void>> retried = Retry.decorateCompletionStage(retryRegistry.retry(instanceName),
+				webhookResilienceScheduler, circuitBroken);
+
+		return retried.get().toCompletableFuture().exceptionally(throwable -> {
+			recordFailure(webhook, throwable);
+			return null;
+		});
 	}
 
-	// Shared by all three annotations: whichever one gives up first (retries
-	// exhausted, circuit open, or the time limit hit) means the same thing -
-	// this delivery failed - and PR16 already established that a failure like
-	// this must be recorded, not silently swallowed.
-	@SuppressWarnings("unused")
-	private CompletableFuture<Void> sendFallback(Webhook webhook, String payload, String idempotencyKey,
-			Throwable throwable) {
+	// Same reasoning as PR16 established for audit logging generally: a
+	// delivery failure like this must be recorded, not silently swallowed,
+	// regardless of which of the three layers above is what ultimately gave up.
+	private void recordFailure(Webhook webhook, Throwable throwable) {
 		log.warn("Webhook delivery failed for webhook {}: {}", webhook.getId(), throwable.toString());
 		meterRegistry.counter("webhook.delivery.failures").increment();
 
@@ -90,8 +124,6 @@ public class WebhookSender {
 				.writeValueAsString(Map.of("url", webhook.getUrl(), "error", String.valueOf(throwable.getMessage())));
 		auditLogRepository.save(new AuditLog(webhook.getOrganizationId(), null, "WEBHOOK_DELIVERY_FAILED", "Webhook",
 				webhook.getId(), metadata));
-
-		return CompletableFuture.completedFuture(null);
 	}
 
 	private String sign(String secret, String payload) {
