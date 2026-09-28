@@ -1,13 +1,23 @@
 package com.taskforge.notification;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,15 +33,38 @@ public class OverdueTaskDigestJob {
 
 	private static final Logger log = LoggerFactory.getLogger(OverdueTaskDigestJob.class);
 
-	private final TaskRepository taskRepository;
-	private final NotificationRepository notificationRepository;
-	private final ObjectMapper objectMapper;
+	// ON CONFLICT DO NOTHING, not a check-then-insert in Java: a check-then-act
+	// in application code can't survive two overlapping runs of the same job
+	// (e.g. a retry after a crash) racing each other between the check and the
+	// insert. The database constraint (see the migration) is what actually
+	// makes this safe - this just tells Postgres to treat hitting it as
+	// "already sent today" rather than an error.
+	private static final String INSERT_DIGEST_SQL = "insert into notifications "
+			+ "(id, user_id, organization_id, type, payload, created_at, digest_date) "
+			+ "values (:id, :userId, :organizationId, 'OVERDUE_TASK_DIGEST', CAST(:payload AS jsonb), now(), :digestDate) "
+			+ "on conflict (user_id, organization_id, digest_date) do nothing";
 
-	public OverdueTaskDigestJob(TaskRepository taskRepository, NotificationRepository notificationRepository,
-			ObjectMapper objectMapper) {
+	private final TaskRepository taskRepository;
+	private final NamedParameterJdbcTemplate jdbcTemplate;
+	private final ObjectMapper objectMapper;
+	// Bounds how many overdue tasks are pulled into the persistence context at
+	// once. This runs globally across every organization, so without a
+	// ceiling a single day's worth of overdue tasks across every tenant would
+	// load as one unbounded result set. Digest payloads are built from the
+	// lightweight (assignee, task id) pairs extracted per page, not from
+	// retained Task entities, so memory stays bounded by this page size
+	// regardless of the total overdue count. Configurable (not a constant) so
+	// a test can force multiple pages with a handful of rows instead of
+	// needing hundreds of tasks to prove the paging loop actually pages.
+	private final int pageSize;
+
+	public OverdueTaskDigestJob(TaskRepository taskRepository, NamedParameterJdbcTemplate jdbcTemplate,
+			ObjectMapper objectMapper,
+			@Value("${app.notification.overdue-digest.page-size:500}") int pageSize) {
 		this.taskRepository = taskRepository;
-		this.notificationRepository = notificationRepository;
+		this.jdbcTemplate = jdbcTemplate;
 		this.objectMapper = objectMapper;
+		this.pageSize = pageSize;
 	}
 
 	@Scheduled(cron = "0 0 6 * * *")
@@ -44,32 +77,57 @@ public class OverdueTaskDigestJob {
 	// the cron schedule, per this PR's own definition of done.
 	@Transactional
 	public void runForDate(LocalDate today) {
-		List<Task> overdueTasks = taskRepository.findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(today,
-				TaskStatus.DONE);
+		Map<AssigneeInOrganization, List<UUID>> taskIdsByAssignee = collectOverdueTaskIdsByAssignee(today);
 
-		Map<AssigneeInOrganization, List<Task>> byAssignee = overdueTasks.stream()
-				.collect(Collectors.groupingBy(
-						task -> new AssigneeInOrganization(task.getAssignee().getId(),
-								task.getProject().getOrganization().getId())));
-
-		int sent = 0;
-		int skipped = 0;
-		for (Map.Entry<AssigneeInOrganization, List<Task>> entry : byAssignee.entrySet()) {
-			int rowsInserted = notificationRepository.insertOverdueDigestIfAbsent(UUID.randomUUID(),
-					entry.getKey().userId(), entry.getKey().organizationId(), buildPayload(entry.getValue()), today);
-			if (rowsInserted > 0) {
-				sent++;
-			}
-			else {
-				skipped++;
-			}
+		if (taskIdsByAssignee.isEmpty()) {
+			log.info("Overdue task digest for {}: nothing overdue", today);
+			return;
 		}
 
-		log.info("Overdue task digest for {}: {} sent, {} already sent today", today, sent, skipped);
+		// One batched round trip instead of one insert per assignee - the
+		// driver sends the whole set of digest rows together, with
+		// ON CONFLICT DO NOTHING still deduplicating a rerun for the same day
+		// exactly as a single-row insert would.
+		SqlParameterSource[] batchArgs = taskIdsByAssignee.entrySet().stream()
+				.map(entry -> digestInsertArgs(entry.getKey(), entry.getValue(), today))
+				.toArray(SqlParameterSource[]::new);
+		int[] rowsInserted = jdbcTemplate.batchUpdate(INSERT_DIGEST_SQL, batchArgs);
+
+		long sent = IntStream.of(rowsInserted).filter(rows -> rows > 0).count();
+		log.info("Overdue task digest for {}: {} sent, {} already sent today", today, sent,
+				rowsInserted.length - sent);
 	}
 
-	private String buildPayload(List<Task> overdueTasks) {
-		List<UUID> taskIds = overdueTasks.stream().map(Task::getId).toList();
+	private Map<AssigneeInOrganization, List<UUID>> collectOverdueTaskIdsByAssignee(LocalDate today) {
+		Map<AssigneeInOrganization, List<UUID>> taskIdsByAssignee = new LinkedHashMap<>();
+
+		Pageable pageable = PageRequest.of(0, pageSize, Sort.by("id"));
+		Slice<Task> page;
+		do {
+			page = taskRepository.findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(today, TaskStatus.DONE,
+					pageable);
+			for (Task task : page.getContent()) {
+				AssigneeInOrganization key = new AssigneeInOrganization(task.getAssignee().getId(),
+						task.getProject().getOrganization().getId());
+				taskIdsByAssignee.computeIfAbsent(key, k -> new ArrayList<>()).add(task.getId());
+			}
+			pageable = page.nextPageable();
+		}
+		while (page.hasNext());
+
+		return taskIdsByAssignee;
+	}
+
+	private SqlParameterSource digestInsertArgs(AssigneeInOrganization assignee, List<UUID> taskIds,
+			LocalDate today) {
+		return new MapSqlParameterSource().addValue("id", UUID.randomUUID())
+				.addValue("userId", assignee.userId())
+				.addValue("organizationId", assignee.organizationId())
+				.addValue("payload", buildPayload(taskIds))
+				.addValue("digestDate", today);
+	}
+
+	private String buildPayload(List<UUID> taskIds) {
 		return objectMapper.writeValueAsString(Map.of("taskCount", taskIds.size(), "taskIds", taskIds));
 	}
 

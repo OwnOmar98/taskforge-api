@@ -103,6 +103,12 @@ app:
   login-lockout:
     max-failures: 5
     lockout-duration: 15m
+  notification:
+    overdue-digest:
+      # How many overdue tasks OverdueTaskDigestJob pulls into memory per
+      # database round trip, bounding the job's memory use regardless of how
+      # many are overdue across every organization on a given day.
+      page-size: 500
   # No frontend origin exists for this project yet; left empty (not a
   # wildcard) so cross-origin browser access stays denied by default.
   cors:

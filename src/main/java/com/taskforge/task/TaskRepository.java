@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -34,9 +35,15 @@ public interface TaskRepository extends JpaRepository<Task, UUID>, JpaSpecificat
 	// assignee/project/project.organization are all fetched together: the
 	// digest job groups the result by (assignee, organization), so touching
 	// either lazily per row while iterating would be exactly the N+1 this
-	// project has already had to fix once (see PR15).
+	// project has already had to fix once (see PR15). Slice, not List: this
+	// runs globally across every organization, so the digest job pages
+	// through it in bounded chunks rather than materializing every overdue
+	// task at once. Slice over Page: the job only needs to know whether
+	// another page follows, not a total count, which would cost a second
+	// full-table-scanning query for no benefit here.
 	@EntityGraph(attributePaths = { "assignee", "project", "project.organization" })
-	List<Task> findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(LocalDate date, TaskStatus status);
+	Slice<Task> findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(LocalDate date, TaskStatus status,
+			Pageable pageable);
 
 	interface TaskLabelRow {
 
