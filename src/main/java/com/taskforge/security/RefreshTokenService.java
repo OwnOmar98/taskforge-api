@@ -1,6 +1,7 @@
 package com.taskforge.security;
 
 import java.time.Instant;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +29,14 @@ public class RefreshTokenService {
 		return issueNew(user).rawValue();
 	}
 
+	// Locked: without it, two concurrent requests racing the same raw token
+	// (a legitimate refresh racing a stolen token's use, or two overlapping
+	// stolen-token uses) can both pass isActive() before either commits its
+	// own revoke(), rotating the same token twice and defeating rotation-based
+	// theft detection.
 	@Transactional
 	public TokenPair rotate(String rawRefreshToken) {
-		RefreshToken existing = findActiveOrThrow(rawRefreshToken);
+		RefreshToken existing = findActiveOrThrowForUpdate(rawRefreshToken);
 		IssuedToken next = issueNew(existing.getUser());
 		existing.revoke(next.entity());
 		return new TokenPair(existing.getUser(), next.rawValue());
@@ -42,9 +48,16 @@ public class RefreshTokenService {
 	}
 
 	private RefreshToken findActiveOrThrow(String rawToken) {
-		RefreshToken token = refreshTokenRepository.findByTokenHash(SecureTokenGenerator.hash(rawToken))
-				.orElseThrow(() -> new UnauthorizedException(AuthErrorCode.INVALID_REFRESH_TOKEN,
-						AuthErrorCode.INVALID_REFRESH_TOKEN.defaultMessage()));
+		return requireActive(refreshTokenRepository.findByTokenHash(SecureTokenGenerator.hash(rawToken)));
+	}
+
+	private RefreshToken findActiveOrThrowForUpdate(String rawToken) {
+		return requireActive(refreshTokenRepository.findByTokenHashForUpdate(SecureTokenGenerator.hash(rawToken)));
+	}
+
+	private RefreshToken requireActive(Optional<RefreshToken> lookup) {
+		RefreshToken token = lookup.orElseThrow(() -> new UnauthorizedException(AuthErrorCode.INVALID_REFRESH_TOKEN,
+				AuthErrorCode.INVALID_REFRESH_TOKEN.defaultMessage()));
 
 		if (!token.isActive()) {
 			throw new UnauthorizedException(AuthErrorCode.INVALID_REFRESH_TOKEN,

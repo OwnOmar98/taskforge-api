@@ -9,6 +9,10 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.taskforge.audit.events.MemberRoleChangedEvent;
+import com.taskforge.audit.events.MembershipRemovedEvent;
+import com.taskforge.audit.events.ProjectMemberAddedEvent;
+import com.taskforge.audit.events.ProjectMemberRemovedEvent;
+import com.taskforge.audit.events.ProjectMemberRoleChangedEvent;
 import com.taskforge.audit.events.TaskStatusChangedEvent;
 
 import tools.jackson.databind.ObjectMapper;
@@ -42,6 +46,43 @@ public class AuditEventListener {
 		String metadata = toJson(Map.of("oldRole", event.oldRole(), "newRole", event.newRole()));
 		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(), "MEMBER_ROLE_CHANGED",
 				"Membership", event.targetUserId(), metadata));
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onMembershipRemoved(MembershipRemovedEvent event) {
+		String metadata = toJson(Map.of("role", event.role()));
+		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(), "MEMBER_REMOVED", "Membership",
+				event.targetUserId(), metadata));
+	}
+
+	// ProjectMember* events use "ProjectMember" as the entity type (not
+	// "Membership") to stay distinguishable from the org-level events above,
+	// even though both ultimately key off targetUserId as the entity id, same
+	// as MemberRoleChangedEvent/MembershipRemovedEvent do for their own level.
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onProjectMemberAdded(ProjectMemberAddedEvent event) {
+		String metadata = toJson(Map.of("projectId", event.projectId(), "role", event.role()));
+		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(), "PROJECT_MEMBER_ADDED",
+				"ProjectMember", event.targetUserId(), metadata));
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onProjectMemberRoleChanged(ProjectMemberRoleChangedEvent event) {
+		String metadata = toJson(
+				Map.of("projectId", event.projectId(), "oldRole", event.oldRole(), "newRole", event.newRole()));
+		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(), "PROJECT_MEMBER_ROLE_CHANGED",
+				"ProjectMember", event.targetUserId(), metadata));
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onProjectMemberRemoved(ProjectMemberRemovedEvent event) {
+		String metadata = toJson(Map.of("projectId", event.projectId(), "role", event.role()));
+		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(), "PROJECT_MEMBER_REMOVED",
+				"ProjectMember", event.targetUserId(), metadata));
 	}
 
 	private String toJson(Map<String, ?> metadata) {

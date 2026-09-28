@@ -2,6 +2,7 @@ package com.taskforge.task;
 
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,7 +43,18 @@ public class LabelService {
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Organization not found"));
 
-		return toResponse(labelRepository.save(new Label(organization, name)));
+		try {
+			// The check above is a point-in-time read, not a lock - two concurrent
+			// creates for the same org+name can both pass it before either commits.
+			// saveAndFlush forces the insert (and the unique constraint it can
+			// violate) to happen synchronously here, not deferred to commit,
+			// where this catch couldn't see it.
+			return toResponse(labelRepository.saveAndFlush(new Label(organization, name)));
+		}
+		catch (DataIntegrityViolationException e) {
+			throw new ConflictException(LabelErrorCode.LABEL_NAME_IN_USE,
+					LabelErrorCode.LABEL_NAME_IN_USE.defaultMessage());
+		}
 	}
 
 	// No @PreAuthorize: TenantInterceptor already requires org membership for
@@ -53,7 +65,7 @@ public class LabelService {
 		return PageResponse.from(page.map(this::toResponse));
 	}
 
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public void attachLabel(UUID taskId, UUID labelId) {
 		Task task = findTaskOrThrow(taskId);
@@ -66,7 +78,7 @@ public class LabelService {
 		task.getLabels().add(label);
 	}
 
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public void detachLabel(UUID taskId, UUID labelId) {
 		Task task = findTaskOrThrow(taskId);

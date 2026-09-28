@@ -10,25 +10,28 @@ spring:
 
 # Small, fast numbers so resilience tests are deterministic and quick, not
 # because production would ever want a circuit breaker this trigger-happy.
+# "configs.default", not "instances.webhook" - see application.yml's own
+# comment on why: WebhookSender resolves a per-organization instance name
+# at runtime, so there's no fixed name to pre-configure here either.
 resilience4j:
   retry:
-    instances:
-      webhook:
+    configs:
+      default:
         max-attempts: 3
         wait-duration: 10ms
         ignore-exceptions:
           - io.github.resilience4j.circuitbreaker.CallNotPermittedException
   circuitbreaker:
-    instances:
-      webhook:
+    configs:
+      default:
         sliding-window-size: 2
         minimum-number-of-calls: 2
         failure-rate-threshold: 100
         wait-duration-in-open-state: 5s
         permitted-number-of-calls-in-half-open-state: 1
   timelimiter:
-    instances:
-      webhook:
+    configs:
+      default:
         # 300ms turned out too tight even for real loopback calls in this
         # environment (RestClient/connection warmup noise alone can exceed
         # it) - real fast responses need real headroom, so the "slow"

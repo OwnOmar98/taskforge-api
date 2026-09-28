@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -88,6 +89,20 @@ public class GlobalExceptionHandler {
 	// catches that at the DB level and throws this.
 	@ExceptionHandler(OptimisticLockingFailureException.class)
 	public ProblemDetail handleOptimisticLocking(OptimisticLockingFailureException ex) {
+		return problemDetail(HttpStatus.CONFLICT, GeneralErrorCode.RESOURCE_CONFLICT,
+				GeneralErrorCode.RESOURCE_CONFLICT.defaultMessage());
+	}
+
+	// Backstop for the same class of race as OptimisticLockingFailureException
+	// above, but for a unique constraint rather than @Version: an existence
+	// check (e.g. "is this email/key/name already taken?") and the insert that
+	// follows it are two separate statements, so two concurrent requests can
+	// both pass the check before either commits. Call sites with a specific,
+	// known-likely constraint (email, project key, label name, ...) should
+	// still catch this locally and rethrow their own ConflictException for a
+	// precise error code - this is the backstop for whatever doesn't.
+	@ExceptionHandler(DataIntegrityViolationException.class)
+	public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
 		return problemDetail(HttpStatus.CONFLICT, GeneralErrorCode.RESOURCE_CONFLICT,
 				GeneralErrorCode.RESOURCE_CONFLICT.defaultMessage());
 	}

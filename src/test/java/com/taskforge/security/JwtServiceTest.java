@@ -1,11 +1,18 @@
 package com.taskforge.security;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Date;
 import java.util.UUID;
+
+import javax.crypto.SecretKey;
 
 import org.junit.jupiter.api.Test;
 
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SignatureException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -44,6 +51,25 @@ class JwtServiceTest {
 		await(50);
 
 		assertThrows(ExpiredJwtException.class, () -> shortLived.extractUserId(token));
+	}
+
+	// generateAccessToken can never produce a non-UUID subject, so this builds
+	// one directly with the same key to simulate a validly-signed token minted
+	// by different code (a future service/ops token, say) whose subject was
+	// never a UUID - documents exactly what JwtAuthenticationFilter's catch
+	// block needs to handle alongside JwtException.
+	@Test
+	void aNonUuidSubjectThrowsIllegalArgumentExceptionNotAJwtException() {
+		SecretKey key = Keys.hmacShaKeyFor(properties.secret().getBytes(StandardCharsets.UTF_8));
+		Instant now = Instant.now();
+		String token = Jwts.builder()
+				.subject("not-a-uuid")
+				.issuedAt(Date.from(now))
+				.expiration(Date.from(now.plus(properties.accessTokenTtl())))
+				.signWith(key)
+				.compact();
+
+		assertThrows(IllegalArgumentException.class, () -> jwtService.extractUserId(token));
 	}
 
 	private void await(long millis) {

@@ -70,9 +70,18 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 		// Tasks have no {orgId} in their path, so TenantInterceptor never runs
 		// for them - this is the only gate standing between a non-member and
 		// task data, unlike Organization/Project routes where it's a backstop.
+		// "MEMBER" is read-only: any tier, including VIEWER, passes.
 		if ("Project".equals(targetType) && "MEMBER".equals(permission)) {
 			UUID projectId = UUID.fromString(targetId.toString());
 			return projectMemberRoleCacheService.findRole(projectId, userId).role() != null;
+		}
+
+		// "CONTRIBUTE" is the write-access tier - VIEWER (read-only by design)
+		// must not pass this, unlike "MEMBER" above.
+		if ("Project".equals(targetType) && "CONTRIBUTE".equals(permission)) {
+			UUID projectId = UUID.fromString(targetId.toString());
+			ProjectMemberRole role = projectMemberRoleCacheService.findRole(projectId, userId).role();
+			return role != null && role.isAtLeast(ProjectMemberRole.CONTRIBUTOR);
 		}
 
 		// Same "resolve up to the owning scope, then check membership there"
@@ -81,6 +90,11 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 		if ("Task".equals(targetType) && "MEMBER".equals(permission)) {
 			UUID taskId = UUID.fromString(targetId.toString());
 			return canAccessTask(userId, taskId);
+		}
+
+		if ("Task".equals(targetType) && "CONTRIBUTE".equals(permission)) {
+			UUID taskId = UUID.fromString(targetId.toString());
+			return canContributeToTask(userId, taskId);
 		}
 
 		// Deleting a comment is allowed for its own author, or as a moderation
@@ -125,6 +139,16 @@ public class TaskForgePermissionEvaluator implements PermissionEvaluator {
 		}
 
 		return projectMemberRoleCacheService.findRole(task.getProject().getId(), userId).role() != null;
+	}
+
+	private boolean canContributeToTask(UUID userId, UUID taskId) {
+		Task task = taskRepository.findById(taskId).orElse(null);
+		if (task == null) {
+			return false;
+		}
+
+		ProjectMemberRole role = projectMemberRoleCacheService.findRole(task.getProject().getId(), userId).role();
+		return role != null && role.isAtLeast(ProjectMemberRole.CONTRIBUTOR);
 	}
 
 	private boolean canManageProject(UUID userId, UUID projectId) {

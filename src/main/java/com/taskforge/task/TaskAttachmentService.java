@@ -39,7 +39,7 @@ public class TaskAttachmentService {
 		this.userRepository = userRepository;
 	}
 
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public TaskAttachmentResponse uploadAttachment(UUID taskId, MultipartFile file, MediaVisibility visibility,
 			UUID uploadedById) {
@@ -72,7 +72,7 @@ public class TaskAttachmentService {
 	// Client-direct upload, step 1: no DB write here at all - just hands back a
 	// signed PUT URL scoped to this task, so we don't even need to load the
 	// Task entity itself, only confirm the caller is allowed to touch it.
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	public PresignedUploadResponse requestPresignedUpload(UUID taskId, PresignedUploadRequest request) {
 		PresignedUploadTicket ticket = mediaService.requestPresignedUpload("tasks/" + taskId, request.contentType(),
 				request.sizeBytes(), request.visibility());
@@ -85,7 +85,7 @@ public class TaskAttachmentService {
 	// happened and link it to this task. The storage-key prefix check stops a
 	// member from confirming a key they were only ever issued for a different
 	// task.
-	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
+	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
 	@Transactional
 	public TaskAttachmentResponse confirmPresignedUpload(UUID taskId, ConfirmPresignedUploadRequest request,
 			UUID uploadedById) {

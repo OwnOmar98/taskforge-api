@@ -54,7 +54,7 @@ public class TaskService {
 		this.meterRegistry = meterRegistry;
 	}
 
-	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
+	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
 	@Transactional
 	public TaskResponse createTask(UUID projectId, String title, String description, TaskPriority priority,
 			LocalDate dueDate, UUID assigneeId, UUID actorId) {
@@ -124,7 +124,7 @@ public class TaskService {
 		return toResponse(findTaskInProjectOrThrow(projectId, taskId), projectId);
 	}
 
-	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
+	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
 	@Transactional
 	public TaskResponse updateTask(UUID projectId, UUID taskId, UpdateTaskRequest request, UUID actorId) {
 		Task task = findTaskInProjectOrThrow(projectId, taskId);
@@ -166,7 +166,7 @@ public class TaskService {
 		return toResponse(task, projectId);
 	}
 
-	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
+	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
 	@Transactional
 	public void deleteTask(UUID projectId, UUID taskId) {
 		taskRepository.delete(findTaskInProjectOrThrow(projectId, taskId));
