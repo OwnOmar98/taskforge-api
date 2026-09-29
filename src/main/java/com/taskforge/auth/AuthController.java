@@ -50,11 +50,12 @@ public class AuthController {
 	private final RefreshTokenService refreshTokenService;
 	private final InvitationService invitationService;
 	private final LoginAttemptService loginAttemptService;
+	private final UserMapper userMapper;
 
 	public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
 			AuthenticationManager authenticationManager, JwtService jwtService,
 			RefreshTokenService refreshTokenService, InvitationService invitationService,
-			LoginAttemptService loginAttemptService) {
+			LoginAttemptService loginAttemptService, UserMapper userMapper) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.authenticationManager = authenticationManager;
@@ -62,6 +63,7 @@ public class AuthController {
 		this.refreshTokenService = refreshTokenService;
 		this.invitationService = invitationService;
 		this.loginAttemptService = loginAttemptService;
+		this.userMapper = userMapper;
 	}
 
 	// @Transactional so a bad/expired/mismatched invitationToken rolls back the
@@ -144,7 +146,7 @@ public class AuthController {
 	public MeResponse me(@CurrentUserId UUID userId) {
 		User user = userRepository.findById(userId).orElseThrow();
 
-		return new MeResponse(user.getId(), user.getEmail(), user.getFullName());
+		return userMapper.toMeResponse(user);
 	}
 
 }

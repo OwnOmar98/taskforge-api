@@ -28,16 +28,18 @@ public class InvitationService {
 	private final UserRepository userRepository;
 	private final InvitationProperties properties;
 	private final MembershipRoleCacheService membershipRoleCacheService;
+	private final OrganizationMapper organizationMapper;
 
 	public InvitationService(InvitationRepository invitationRepository, MembershipRepository membershipRepository,
 			OrganizationRepository organizationRepository, UserRepository userRepository,
-			InvitationProperties properties, MembershipRoleCacheService membershipRoleCacheService) {
+			InvitationProperties properties, MembershipRoleCacheService membershipRoleCacheService, OrganizationMapper organizationMapper) {
 		this.invitationRepository = invitationRepository;
 		this.membershipRepository = membershipRepository;
 		this.organizationRepository = organizationRepository;
 		this.userRepository = userRepository;
 		this.properties = properties;
 		this.membershipRoleCacheService = membershipRoleCacheService;
+		this.organizationMapper = organizationMapper;
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -81,8 +83,7 @@ public class InvitationService {
 		Invitation invitation = invitationRepository.save(new Invitation(organization, normalizedEmail, role,
 				SecureTokenGenerator.hash(rawToken), invitedBy, Instant.now().plus(properties.ttl())));
 
-		return new InvitationResponse(invitation.getId(), invitation.getEmail(), invitation.getRole(), rawToken,
-				invitation.getExpiresAt());
+		return organizationMapper.toResponse(invitation, rawToken);
 	}
 
 	@Transactional
@@ -112,8 +113,7 @@ public class InvitationService {
 		// MembershipService.changeRole.
 		AfterCommit.run(() -> membershipRoleCacheService.evict(organizationId, currentUser.getId()));
 
-		return new MemberResponse(currentUser.getId(), currentUser.getEmail(), currentUser.getFullName(),
-				membership.getRole());
+		return organizationMapper.toMemberResponse(currentUser, membership.getRole());
 	}
 
 	@Transactional

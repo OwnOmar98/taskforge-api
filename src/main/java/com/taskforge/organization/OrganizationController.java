@@ -26,9 +26,11 @@ import jakarta.validation.Valid;
 public class OrganizationController {
 
 	private final OrganizationService organizationService;
+	private final OrganizationMapper organizationMapper;
 
-	public OrganizationController(OrganizationService organizationService) {
+	public OrganizationController(OrganizationService organizationService, OrganizationMapper organizationMapper) {
 		this.organizationService = organizationService;
+		this.organizationMapper = organizationMapper;
 	}
 
 	@Operation(summary = "Create an organization")
@@ -36,19 +38,14 @@ public class OrganizationController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request,
 			@CurrentUserId UUID currentUserId) {
-		return toResponse(organizationService.createOrganization(request.name(), currentUserId));
+		return organizationMapper.toResponse(organizationService.createOrganization(request.name(), currentUserId));
 	}
 
 	@Operation(summary = "Rename an organization")
 	@PatchMapping("/{orgId}")
 	public OrganizationResponse update(@PathVariable UUID orgId,
 			@Valid @RequestBody UpdateOrganizationRequest request) {
-		return toResponse(organizationService.renameOrganization(orgId, request.name()));
-	}
-
-	private OrganizationResponse toResponse(Organization organization) {
-		return new OrganizationResponse(organization.getId(), organization.getName(), organization.getSlug(),
-				organization.getCreatedAt());
+		return organizationMapper.toResponse(organizationService.renameOrganization(orgId, request.name()));
 	}
 
 }

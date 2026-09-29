@@ -30,13 +30,15 @@ public class TaskAttachmentService {
 	private final MediaService mediaService;
 	private final MediaRepository mediaRepository;
 	private final UserRepository userRepository;
+	private final TaskMapper taskMapper;
 
 	public TaskAttachmentService(TaskRepository taskRepository, MediaService mediaService,
-			MediaRepository mediaRepository, UserRepository userRepository) {
+			MediaRepository mediaRepository, UserRepository userRepository, TaskMapper taskMapper) {
 		this.taskRepository = taskRepository;
 		this.mediaService = mediaService;
 		this.mediaRepository = mediaRepository;
 		this.userRepository = userRepository;
+		this.taskMapper = taskMapper;
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
@@ -57,7 +59,7 @@ public class TaskAttachmentService {
 		Media managedMedia = mediaRepository.getReferenceById(media.getId());
 		task.getAttachments().add(managedMedia);
 
-		return toResponse(media);
+		return taskMapper.toAttachmentResponse(media);
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
@@ -102,7 +104,7 @@ public class TaskAttachmentService {
 				request.visibility(), uploadedBy);
 		task.getAttachments().add(media);
 
-		return toResponse(media);
+		return taskMapper.toAttachmentResponse(media);
 	}
 
 	private Task findTaskOrThrow(UUID taskId) {
@@ -117,11 +119,6 @@ public class TaskAttachmentService {
 				.findFirst()
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Attachment not found"));
-	}
-
-	private TaskAttachmentResponse toResponse(Media media) {
-		return new TaskAttachmentResponse(media.getId(), media.getFilename(), media.getContentType(),
-				media.getSizeBytes(), media.getVisibility(), media.getCreatedAt());
 	}
 
 }

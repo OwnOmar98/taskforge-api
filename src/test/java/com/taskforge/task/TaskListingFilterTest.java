@@ -157,6 +157,23 @@ class TaskListingFilterTest {
 	}
 
 	@Test
+	void labelNamesAreListedAlphabeticallyRegardlessOfAttachOrder() throws Exception {
+		String suffix = UUID.randomUUID().toString();
+		Label zebra = labelRepository.saveAndFlush(new Label(project.getOrganization(), "zebra-" + suffix));
+		Label apple = labelRepository.saveAndFlush(new Label(project.getOrganization(), "apple-" + suffix));
+		Task task = new Task(project, "Two labels", null, TaskPriority.LOW, null);
+		task.getLabels().add(zebra);
+		task.getLabels().add(apple);
+		taskRepository.saveAndFlush(task);
+
+		mockMvc.perform(get("/api/v1/projects/" + project.getId() + "/tasks?labelId=" + zebra.getId())
+						.header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].labelNames[0]").value("apple-" + suffix))
+				.andExpect(jsonPath("$.content[0].labelNames[1]").value("zebra-" + suffix));
+	}
+
+	@Test
 	void combinesMultipleFilters() throws Exception {
 		mockMvc.perform(get("/api/v1/projects/" + project.getId() + "/tasks?status=TODO&priority=MEDIUM")
 						.header("Authorization", "Bearer " + token))

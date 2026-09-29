@@ -24,12 +24,14 @@ public class MembershipService {
 	private final MembershipRepository membershipRepository;
 	private final ApplicationEventPublisher eventPublisher;
 	private final MembershipRoleCacheService membershipRoleCacheService;
+	private final OrganizationMapper organizationMapper;
 
 	public MembershipService(MembershipRepository membershipRepository, ApplicationEventPublisher eventPublisher,
-			MembershipRoleCacheService membershipRoleCacheService) {
+			MembershipRoleCacheService membershipRoleCacheService, OrganizationMapper organizationMapper) {
 		this.membershipRepository = membershipRepository;
 		this.eventPublisher = eventPublisher;
 		this.membershipRoleCacheService = membershipRoleCacheService;
+		this.organizationMapper = organizationMapper;
 	}
 
 	// No @PreAuthorize here: TenantInterceptor already rejects non-members for
@@ -38,7 +40,7 @@ public class MembershipService {
 	@Transactional(readOnly = true)
 	public PageResponse<MemberResponse> listMembers(UUID organizationId, Pageable pageable) {
 		Page<Membership> page = membershipRepository.findByOrganizationIdWithUser(organizationId, pageable);
-		return PageResponse.from(page.map(this::toResponse));
+		return PageResponse.from(page.map(organizationMapper::toResponse));
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -68,7 +70,7 @@ public class MembershipService {
 		// still uncommitted lets a concurrent read repopulate the cache with
 		// the pre-change role before anything evicts it again.
 		AfterCommit.run(() -> membershipRoleCacheService.evict(organizationId, targetUserId));
-		return toResponse(membership);
+		return organizationMapper.toResponse(membership);
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -91,11 +93,6 @@ public class MembershipService {
 		return membershipRepository.findByOrganization_IdAndUser_Id(organizationId, userId)
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Membership not found"));
-	}
-
-	private MemberResponse toResponse(Membership membership) {
-		return new MemberResponse(membership.getUser().getId(), membership.getUser().getEmail(),
-				membership.getUser().getFullName(), membership.getRole());
 	}
 
 }

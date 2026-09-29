@@ -29,6 +29,7 @@
 	<properties>
 		<java.version>25</java.version>
 		<awssdk.version>2.46.7</awssdk.version>
+		<mapstruct.version>1.6.3</mapstruct.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -78,6 +79,11 @@
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-spring-boot4</artifactId>
 			<version>2.4.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.mapstruct</groupId>
+			<artifactId>mapstruct</artifactId>
+			<version>${mapstruct.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
@@ -247,6 +253,18 @@
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
+						</path>
+						<!-- Entities expose their getters through Lombok; without this binding
+						     MapStruct can run before Lombok has generated them and see none. -->
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok-mapstruct-binding</artifactId>
+							<version>0.2.0</version>
+						</path>
+						<path>
+							<groupId>org.mapstruct</groupId>
+							<artifactId>mapstruct-processor</artifactId>
+							<version>${mapstruct.version}</version>
 						</path>
 						<path>
 							<groupId>org.springframework.boot</groupId>
