@@ -13,18 +13,22 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+
+import org.hibernate.annotations.SQLRestriction;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import com.taskforge.common.Auditable;
+import com.taskforge.common.SoftDeletable;
 import com.taskforge.organization.Organization;
 
 @Entity
 @Table(name = "projects")
+@SQLRestriction("deleted_at is null")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Project extends Auditable {
+public class Project extends SoftDeletable {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)

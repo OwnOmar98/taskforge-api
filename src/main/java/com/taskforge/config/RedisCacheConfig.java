@@ -7,6 +7,8 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheWriter;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 
@@ -22,7 +24,8 @@ public class RedisCacheConfig {
 	private static final Duration DEFAULT_TTL = Duration.ofMinutes(5);
 
 	@Bean
-	public RedisCacheManagerBuilderCustomizer redisCacheManagerBuilderCustomizer() {
+	public RedisCacheManagerBuilderCustomizer redisCacheManagerBuilderCustomizer(
+			RedisConnectionFactory connectionFactory) {
 		// GenericJackson2JsonRedisSerializer (Jackson 2) is deprecated for
 		// removal in this version - GenericJacksonJsonRedisSerializer (no "2")
 		// is the Jackson 3 replacement, matching the Jackson version used
@@ -41,7 +44,17 @@ public class RedisCacheConfig {
 		// Different cache names get their own TTL rather than sharing one
 		// blanket default, to show the manager supports it - both are still
 		// backstops behind the same mandatory eviction-on-write.
-		return builder -> builder.cacheDefaults(defaultConfig)
+		// immediateWrites: Spring Data Redis 4 writes to the cache
+		// asynchronously by default whenever the driver supports it (Lettuce
+		// does), so @CacheEvict fired its DEL without waiting for it - a lookup
+		// right after an eviction could still read the old role. For a cache
+		// whose eviction is a security guarantee (a demoted user, a deleted
+		// project) that window is the bug, so writes wait for Redis.
+		RedisCacheWriter cacheWriter = RedisCacheWriter.create(connectionFactory,
+				configurer -> configurer.immediateWrites());
+
+		return builder -> builder.cacheWriter(cacheWriter)
+				.cacheDefaults(defaultConfig)
 				.withCacheConfiguration("orgMembershipRole", defaultConfig.entryTtl(Duration.ofMinutes(10)))
 				.withCacheConfiguration("projectMemberRole", defaultConfig.entryTtl(Duration.ofMinutes(5)));
 	}

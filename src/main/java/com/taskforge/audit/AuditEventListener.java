@@ -1,5 +1,6 @@
 package com.taskforge.audit;
 
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
@@ -8,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import com.taskforge.audit.events.EntityDeletedEvent;
+import com.taskforge.audit.events.EntityRestoredEvent;
 import com.taskforge.audit.events.MemberRoleChangedEvent;
 import com.taskforge.audit.events.MembershipRemovedEvent;
 import com.taskforge.audit.events.ProjectMemberAddedEvent;
@@ -30,6 +33,25 @@ public class AuditEventListener {
 	public AuditEventListener(AuditLogRepository auditLogRepository, ObjectMapper objectMapper) {
 		this.auditLogRepository = auditLogRepository;
 		this.objectMapper = objectMapper;
+	}
+
+	// entityType "Task"/"Project" becomes TASK_DELETED/PROJECT_DELETED. With a
+	// soft delete, entity_id here keeps resolving to a real row - with the
+	// previous hard delete it silently dangled the moment the task was gone.
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onEntityDeleted(EntityDeletedEvent event) {
+		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(),
+				event.entityType().toUpperCase(Locale.ROOT) + "_DELETED", event.entityType(), event.entityId(),
+				toJson(event.metadata())));
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onEntityRestored(EntityRestoredEvent event) {
+		auditLogRepository.save(new AuditLog(event.organizationId(), event.actorId(),
+				event.entityType().toUpperCase(Locale.ROOT) + "_RESTORED", event.entityType(), event.entityId(),
+				toJson(event.metadata())));
 	}
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)

@@ -132,8 +132,8 @@ public class OverdueTaskDigestJob {
 		Pageable pageable = PageRequest.of(0, pageSize, Sort.by("id"));
 		Slice<Task> page;
 		do {
-			page = taskRepository.findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(today, TaskStatus.DONE,
-					pageable);
+			page = taskRepository.findByDueDateBeforeAndStatusNotAndAssigneeIsNotNullAndProject_DeletedAtIsNull(today,
+					TaskStatus.DONE, pageable);
 			for (Task task : page.getContent()) {
 				AssigneeInOrganization key = new AssigneeInOrganization(task.getAssignee().getId(),
 						task.getProject().getOrganization().getId());

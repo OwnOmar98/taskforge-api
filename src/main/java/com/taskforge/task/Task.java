@@ -23,20 +23,24 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+
+import org.hibernate.annotations.SQLRestriction;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import com.taskforge.common.Auditable;
+import com.taskforge.common.SoftDeletable;
 import com.taskforge.media.Media;
 import com.taskforge.project.Project;
 import com.taskforge.user.User;
 
 @Entity
 @Table(name = "tasks")
+@SQLRestriction("deleted_at is null")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Task extends Auditable {
+public class Task extends SoftDeletable {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
@@ -72,8 +76,9 @@ public class Task extends Auditable {
 	private Long version;
 
 	// Owned lifecycle: a comment has no existence apart from its task, so
-	// deleting the task deletes its comments, and removing one from this list
-	// deletes it outright (orphanRemoval) rather than leaving a dangling row.
+	// hard-deleting the task deletes its comments, and removing one from this
+	// list deletes it outright (orphanRemoval) rather than leaving a dangling
+	// row. A soft delete deliberately triggers neither - see SoftDeletable.
 	@OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
 	private List<TaskComment> comments = new ArrayList<>();
 
