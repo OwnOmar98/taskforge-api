@@ -74,8 +74,15 @@ public class TaskController {
 	@Operation(summary = "Delete a task")
 	@DeleteMapping("/{taskId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void delete(@PathVariable UUID projectId, @PathVariable UUID taskId) {
-		taskService.deleteTask(projectId, taskId);
+	public void delete(@PathVariable UUID projectId, @PathVariable UUID taskId, @CurrentUserId UUID currentUserId) {
+		taskService.deleteTask(projectId, taskId, currentUserId);
+	}
+
+	@Operation(summary = "Restore a deleted task")
+	@PostMapping("/{taskId}/restore")
+	public TaskResponse restore(@PathVariable UUID projectId, @PathVariable UUID taskId,
+			@CurrentUserId UUID currentUserId) {
+		return taskService.restoreTask(projectId, taskId, currentUserId);
 	}
 
 }

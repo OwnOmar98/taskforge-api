@@ -9,7 +9,10 @@ public enum UserEventType {
 	// Persisted and replayable: carries the notification id as its event id.
 	NOTIFICATION("notification"),
 	// A signal to refetch, not a record: nothing to replay if missed.
-	TASK_UPDATED("task.updated");
+	TASK_UPDATED("task.updated"),
+	// Signal: the task left the recipient's list. A restore is sent as
+	// task.updated - it's back, refetch.
+	TASK_DELETED("task.deleted");
 
 	private final String wireName;
 

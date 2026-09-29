@@ -42,8 +42,19 @@ public interface TaskRepository extends JpaRepository<Task, UUID>, JpaSpecificat
 	// another page follows, not a total count, which would cost a second
 	// full-table-scanning query for no benefit here.
 	@EntityGraph(attributePaths = { "assignee", "project", "project.organization" })
-	Slice<Task> findByDueDateBeforeAndStatusNotAndAssigneeIsNotNull(LocalDate date, TaskStatus status,
-			Pageable pageable);
+	// Project_DeletedAtIsNull is spelled out rather than left to Project's
+	// @SQLRestriction: whether an entity-level restriction also applies across
+	// an association join isn't something to leave implicit when the cost of
+	// getting it wrong is digesting tasks from a deleted project.
+	Slice<Task> findByDueDateBeforeAndStatusNotAndAssigneeIsNotNullAndProject_DeletedAtIsNull(LocalDate date,
+			TaskStatus status, Pageable pageable);
+
+	// Native on purpose: @SQLRestriction hides deleted rows from every JPQL
+	// query and find(), and restoring one is the single place that needs to
+	// see them.
+	@Query(value = "select * from tasks where id = :id and project_id = :projectId and deleted_at is not null",
+			nativeQuery = true)
+	Optional<Task> findDeletedByIdAndProjectId(@Param("id") UUID id, @Param("projectId") UUID projectId);
 
 	interface TaskLabelRow {
 

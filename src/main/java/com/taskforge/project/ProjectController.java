@@ -6,6 +6,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -62,6 +63,20 @@ public class ProjectController {
 	public ProjectResponse update(@PathVariable UUID orgId, @PathVariable UUID projectId,
 			@Valid @RequestBody UpdateProjectRequest request) {
 		return projectService.updateProject(orgId, projectId, request.name(), request.version());
+	}
+
+	@Operation(summary = "Delete a project (restorable)")
+	@DeleteMapping("/{projectId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void delete(@PathVariable UUID orgId, @PathVariable UUID projectId, @CurrentUserId UUID currentUserId) {
+		projectService.deleteProject(orgId, projectId, currentUserId);
+	}
+
+	@Operation(summary = "Restore a deleted project")
+	@PostMapping("/{projectId}/restore")
+	public ProjectResponse restore(@PathVariable UUID orgId, @PathVariable UUID projectId,
+			@CurrentUserId UUID currentUserId) {
+		return projectService.restoreProject(orgId, projectId, currentUserId);
 	}
 
 }

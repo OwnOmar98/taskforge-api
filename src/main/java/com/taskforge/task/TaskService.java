@@ -17,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.audit.events.EntityDeletedEvent;
+import com.taskforge.audit.events.EntityRestoredEvent;
 import com.taskforge.audit.events.TaskStatusChangedEvent;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
@@ -207,8 +209,42 @@ public class TaskService {
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
 	@Transactional
-	public void deleteTask(UUID projectId, UUID taskId) {
-		taskRepository.delete(findTaskInProjectOrThrow(projectId, taskId));
+	public void deleteTask(UUID projectId, UUID taskId, UUID actorId) {
+		Task task = findTaskInProjectOrThrow(projectId, taskId);
+		task.markDeleted(actorId);
+
+		eventPublisher.publishEvent(new EntityDeletedEvent(task.getProject().getOrganization().getId(), actorId,
+				"Task", task.getId(), Map.of("title", task.getTitle())));
+		signalAssignee(task, actorId,
+				UserEvent.signal(UserEventType.TASK_DELETED, Map.of("taskId", task.getId(), "projectId", projectId)));
+	}
+
+	// Same CONTRIBUTE rule as deleting. A task whose project is itself deleted
+	// can't get this far: a deleted project has no members for authorization,
+	// so the project has to be restored first.
+	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
+	@Transactional
+	public TaskResponse restoreTask(UUID projectId, UUID taskId, UUID actorId) {
+		Task task = taskRepository.findDeletedByIdAndProjectId(taskId, projectId)
+				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
+						"Deleted task not found"));
+		task.restore();
+		taskRepository.flush();
+
+		eventPublisher.publishEvent(new EntityRestoredEvent(task.getProject().getOrganization().getId(), actorId,
+				"Task", task.getId(), Map.of("title", task.getTitle())));
+		// A restored task reappears in its assignee's list - the same "refetch"
+		// signal as any other change to it.
+		signalAssignee(task, actorId, UserEvent.signal(UserEventType.TASK_UPDATED,
+				Map.of("taskId", task.getId(), "projectId", projectId, "version", task.getVersion())));
+		return taskMapper.toResponse(task, projectId);
+	}
+
+	private void signalAssignee(Task task, UUID actorId, UserEvent event) {
+		User assignee = task.getAssignee();
+		if (assignee != null && !assignee.getId().equals(actorId)) {
+			userEventPublisher.publishAfterCommit(assignee.getId(), event);
+		}
 	}
 
 	// Deliberately here, not a validation annotation: "is this user a member of

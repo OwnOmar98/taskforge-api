@@ -16,20 +16,19 @@ services:
       - "6380:6379"
 
   # For manually poking at the storage feature locally without touching real
-  # DO Spaces - automated tests spin up their own ephemeral MinIO via
-  # Testcontainers instead and never use this one.
-  minio:
-    # Docker Hub withdrew minio/minio in 2026; MinIO now publishes only to quay.io.
-    image: quay.io/minio/minio
-    command: server /data
+  # DO Spaces - automated tests spin up their own ephemeral LocalStack via
+  # Testcontainers instead and never use this one. Same pinned 3.8 image as
+  # the tests (see TaskAttachmentControllerTest for why MinIO and newer
+  # LocalStack tags are out).
+  localstack:
+    image: localstack/localstack:3.8
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      SERVICES: s3
     ports:
-      - "9000:9000"
+      - "4566:4566"
     volumes:
-      - minio-data:/data
+      - localstack-data:/var/lib/localstack
 
 volumes:
   postgres-data:
-  minio-data:
+  localstack-data:

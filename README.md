@@ -10,7 +10,7 @@ incrementally as a series of independent, reviewable PRs.
 - Redis (permission-check caching, rate limiting, pub/sub fan-out for real-time events)
 - Spring Security / JWT (access + rotating refresh tokens)
 - Resilience4j (retry/circuit breaker/timeout on outbound webhook delivery)
-- S3-compatible object storage (DigitalOcean Spaces in prod; LocalStack/MinIO in tests/local dev)
+- S3-compatible object storage (DigitalOcean Spaces in prod; LocalStack in tests/local dev)
 - springdoc-openapi (Swagger UI, `/v3/api-docs`)
 - Testcontainers for integration tests; GitHub Actions CI (migration verification, full
   Testcontainers suite, Docker image build)
@@ -30,8 +30,8 @@ Requires Java 25.
 ```
 
 By default this runs without an active profile. The `dev` profile needs Postgres and Redis
-(`docker compose up -d` starts both, plus a local MinIO for manually poking at the storage
-feature) and the DO Spaces variables in `.env.example` sourced into your shell:
+(`docker compose up -d` starts both, plus a local LocalStack S3 on port 4566 for manually poking at
+the storage feature) and the DO Spaces variables in `.env.example` sourced into your shell:
 
 ```
 docker compose up -d
@@ -84,10 +84,11 @@ The SSE `event:` field is the event type; clients dispatch on it. `data:` is tha
 |----------------|-----------------|-------------------------------------------------------|-------------------------------------------------------------------------------------|
 | `notification` | notification id | same shape as one item of `GET /api/v1/notifications` | the notification's recipient                                                        |
 | `task.updated` | none            | `{taskId, projectId, version}`                        | the task's assignee, plus the previous assignee on a reassignment, never the editor |
+| `task.deleted` | none            | `{taskId, projectId}`                                 | the task's assignee, never the deleter                                              |
 | `resync`       | none            | empty                                                 | a reconnecting client whose missed backlog exceeds `app.realtime.replay-limit`      |
 
 - **Two kinds of event.** *Replayable* events (`notification`) are persisted and carry an `id`.
-  *Signals* (`task.updated`) mean "refetch this", aren't stored and carry no `id`, so they never move
+  *Signals* (`task.updated`, `task.deleted`) mean "refetch this", aren't stored and carry no `id`, so they never move
   the client's last-event-id.
 - **Reconnecting:** send the last received id back as `Last-Event-ID` and missed notifications are
   replayed, oldest first. Events can occasionally arrive twice around a reconnect, so de-duplicate by
@@ -107,6 +108,29 @@ The SSE `event:` field is the event type; clients dispatch on it. `data:` is tha
   `UserEventPublisher.publishAfterCommit(userId, UserEvent.signal(type, data))` where the change
   happens. Nothing else (Redis subscription, endpoint, registry) needs to change. A second
   *replayable* type would also need its own `EventReplaySource` and namespaced event ids.
+
+## Deleting and restoring
+
+Tasks and projects are soft-deleted: `DELETE` hides them everywhere, but the rows (and everything under
+them: a task's comments and attachments, a project's tasks) stay in the database and can be restored.
+
+| Action            | Endpoint                                                          | Who                        |
+|-------------------|-------------------------------------------------------------------|----------------------------|
+| Delete a task     | `DELETE /api/v1/projects/{projectId}/tasks/{taskId}`              | project CONTRIBUTOR+       |
+| Restore a task    | `POST /api/v1/projects/{projectId}/tasks/{taskId}/restore`        | project CONTRIBUTOR+       |
+| Delete a project  | `DELETE /api/v1/organizations/{orgId}/projects/{projectId}`       | org ADMIN+ or project LEAD |
+| Restore a project | `POST /api/v1/organizations/{orgId}/projects/{projectId}/restore` | org ADMIN+                 |
+
+- A deleted task or project answers exactly like one that doesn't exist. A deleted project also hides
+  all of its tasks, and a task inside a deleted project can only come back by restoring the project.
+- A deleted project's key is free for a new project to reuse. Restoring the old one while its key is
+  taken returns 409 `PROJECT_KEY_IN_USE`.
+- Every delete and restore is recorded in the audit log (`TASK_DELETED`, `TASK_RESTORED`,
+  `PROJECT_DELETED`, `PROJECT_RESTORED`) with the actor and the task's title or the project's key and
+  name. Admins can find deleted ids through `GET /api/v1/organizations/{orgId}/audit-logs`.
+- Deleting a task sends its assignee a `task.deleted` real-time event, and restoring it sends
+  `task.updated`.
+- Nothing is purged automatically yet.
 
 ## Environment variables
 

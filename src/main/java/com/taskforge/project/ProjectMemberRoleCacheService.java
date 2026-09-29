@@ -26,7 +26,7 @@ public class ProjectMemberRoleCacheService {
 	@Cacheable(cacheNames = "projectMemberRole", key = "#projectId + ':' + #userId")
 	@Transactional(readOnly = true)
 	public ProjectMemberRoleLookup findRole(UUID projectId, UUID userId) {
-		ProjectMemberRole role = projectMemberRepository.findByProject_IdAndUser_Id(projectId, userId)
+		ProjectMemberRole role = projectMemberRepository.findActiveMembership(projectId, userId)
 				.map(ProjectMember::getRole)
 				.orElse(null);
 		return new ProjectMemberRoleLookup(role);

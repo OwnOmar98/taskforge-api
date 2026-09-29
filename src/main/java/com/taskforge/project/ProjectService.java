@@ -1,8 +1,11 @@
 package com.taskforge.project;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +13,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.taskforge.audit.events.EntityDeletedEvent;
+import com.taskforge.audit.events.EntityRestoredEvent;
+import com.taskforge.common.AfterCommit;
 import com.taskforge.common.PageResponse;
 import com.taskforge.common.exception.ConflictException;
 import com.taskforge.common.exception.GeneralErrorCode;
@@ -28,14 +34,19 @@ public class ProjectService {
 	private final OrganizationRepository organizationRepository;
 	private final UserRepository userRepository;
 	private final ProjectMapper projectMapper;
+	private final ProjectMemberRoleCacheService projectMemberRoleCacheService;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public ProjectService(ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository,
-			OrganizationRepository organizationRepository, UserRepository userRepository, ProjectMapper projectMapper) {
+			OrganizationRepository organizationRepository, UserRepository userRepository, ProjectMapper projectMapper,
+			ProjectMemberRoleCacheService projectMemberRoleCacheService, ApplicationEventPublisher eventPublisher) {
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
 		this.organizationRepository = organizationRepository;
 		this.userRepository = userRepository;
 		this.projectMapper = projectMapper;
+		this.projectMemberRoleCacheService = projectMemberRoleCacheService;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -106,6 +117,61 @@ public class ProjectService {
 		// reflects the incremented version instead of the stale in-memory one.
 		projectRepository.flush();
 		return projectMapper.toResponse(project);
+	}
+
+	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
+	@Transactional
+	public void deleteProject(UUID organizationId, UUID projectId, UUID actorId) {
+		Project project = findProjectInOrgOrThrow(organizationId, projectId);
+		project.markDeleted(actorId);
+
+		evictMemberRolesAfterCommit(projectId);
+		eventPublisher.publishEvent(new EntityDeletedEvent(organizationId, actorId, "Project", projectId,
+				Map.of("key", project.getKey(), "name", project.getName())));
+	}
+
+	// Org ADMIN, not the MANAGE rule deleting uses: MANAGE also admits the
+	// project's LEAD, but a deleted project has no members for authorization
+	// purposes (see ProjectMemberRepository.findActiveMembership), so a LEAD
+	// could never pass it here anyway.
+	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
+	@Transactional
+	public ProjectResponse restoreProject(UUID organizationId, UUID projectId, UUID actorId) {
+		Project project = projectRepository.findDeletedByIdAndOrganizationId(projectId, organizationId)
+				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
+						"Deleted project not found"));
+
+		// Only live projects hold a key (see V16's partial unique index), so a
+		// new project may have taken this one while it was deleted.
+		if (projectRepository.existsByOrganization_IdAndKey(organizationId, project.getKey())) {
+			throw new ConflictException(ProjectErrorCode.PROJECT_KEY_IN_USE,
+					ProjectErrorCode.PROJECT_KEY_IN_USE.defaultMessage());
+		}
+
+		project.restore();
+		try {
+			// Same check-then-act gap as createProject: the flush is what lets a
+			// concurrent create that slipped past the check above surface here.
+			projectRepository.flush();
+		}
+		catch (DataIntegrityViolationException e) {
+			throw new ConflictException(ProjectErrorCode.PROJECT_KEY_IN_USE,
+					ProjectErrorCode.PROJECT_KEY_IN_USE.defaultMessage());
+		}
+
+		evictMemberRolesAfterCommit(projectId);
+		eventPublisher.publishEvent(new EntityRestoredEvent(organizationId, actorId, "Project", projectId,
+				Map.of("key", project.getKey(), "name", project.getName())));
+		return projectMapper.toResponse(project);
+	}
+
+	// Every member's cached role has to go, in both directions: after a delete
+	// a cached role would keep the project reachable until TTL expiry (the
+	// security bug the role cache's own eviction rule exists to prevent); after
+	// a restore, a cached "no role" would keep locking members out.
+	private void evictMemberRolesAfterCommit(UUID projectId) {
+		List<UUID> memberIds = projectMemberRepository.findUserIdsByProjectId(projectId);
+		AfterCommit.run(() -> memberIds.forEach(userId -> projectMemberRoleCacheService.evict(projectId, userId)));
 	}
 
 	Project findProjectInOrgOrThrow(UUID organizationId, UUID projectId) {

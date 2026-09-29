@@ -190,6 +190,25 @@ class UserEventStreamTest {
 	}
 
 	@Test
+	void deletingATaskSignalsItsAssignee() throws Exception {
+		Scenario scenario = scenario();
+		UUID taskId = createTaskAssignedTo(port, scenario);
+		SseClient assigneeStream = connect(port, token(scenario.assignee()));
+
+		HttpRequest request = HttpRequest
+				.newBuilder(URI.create(
+						baseUrl(port) + "/api/v1/projects/" + scenario.project().getId() + "/tasks/" + taskId))
+				.header("Authorization", "Bearer " + token(scenario.lead()))
+				.DELETE()
+				.build();
+		assertEquals(204, httpClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode());
+
+		SseEvent event = assigneeStream.nextEvent("task.deleted");
+		assertNull(event.id());
+		assertEquals(taskId.toString(), objectMapper.readTree(event.data()).get("taskId").asString());
+	}
+
+	@Test
 	void anUpdateThatChangesNothingSignalsNobody() throws Exception {
 		Scenario scenario = scenario();
 		UUID taskId = createTaskAssignedTo(port, scenario);
