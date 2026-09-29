@@ -27,13 +27,15 @@ public class ProjectService {
 	private final ProjectMemberRepository projectMemberRepository;
 	private final OrganizationRepository organizationRepository;
 	private final UserRepository userRepository;
+	private final ProjectMapper projectMapper;
 
 	public ProjectService(ProjectRepository projectRepository, ProjectMemberRepository projectMemberRepository,
-			OrganizationRepository organizationRepository, UserRepository userRepository) {
+			OrganizationRepository organizationRepository, UserRepository userRepository, ProjectMapper projectMapper) {
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
 		this.organizationRepository = organizationRepository;
 		this.userRepository = userRepository;
+		this.projectMapper = projectMapper;
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -70,18 +72,18 @@ public class ProjectService {
 		// No cache eviction needed, same reasoning as OrganizationService.
 		// createOrganization: project.getId() has never existed before this
 		// line, so no prior cache entry for this pair could exist to invalidate.
-		return toResponse(project);
+		return projectMapper.toResponse(project);
 	}
 
 	@Transactional(readOnly = true)
 	public PageResponse<ProjectResponse> listProjects(UUID organizationId, Pageable pageable) {
 		Page<Project> page = projectRepository.findByOrganization_Id(organizationId, pageable);
-		return PageResponse.from(page.map(this::toResponse));
+		return PageResponse.from(page.map(projectMapper::toResponse));
 	}
 
 	@Transactional(readOnly = true)
 	public ProjectResponse getProject(UUID organizationId, UUID projectId) {
-		return toResponse(findProjectInOrgOrThrow(organizationId, projectId));
+		return projectMapper.toResponse(findProjectInOrgOrThrow(organizationId, projectId));
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
@@ -103,7 +105,7 @@ public class ProjectService {
 		// happen until this transaction commits - flushing now so the response
 		// reflects the incremented version instead of the stale in-memory one.
 		projectRepository.flush();
-		return toResponse(project);
+		return projectMapper.toResponse(project);
 	}
 
 	Project findProjectInOrgOrThrow(UUID organizationId, UUID projectId) {
@@ -114,11 +116,6 @@ public class ProjectService {
 
 	private String normalizeKey(String key) {
 		return key == null ? null : key.strip().toUpperCase(Locale.ROOT);
-	}
-
-	private ProjectResponse toResponse(Project project) {
-		return new ProjectResponse(project.getId(), project.getOrganization().getId(), project.getKey(),
-				project.getName(), project.getVersion(), project.getCreatedAt());
 	}
 
 }

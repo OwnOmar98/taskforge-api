@@ -48,11 +48,12 @@ public class TaskService {
 	private final ApplicationEventPublisher eventPublisher;
 	private final MeterRegistry meterRegistry;
 	private final UserEventPublisher userEventPublisher;
+	private final TaskMapper taskMapper;
 
 	public TaskService(TaskRepository taskRepository, ProjectRepository projectRepository,
 			ProjectMemberRepository projectMemberRepository, UserRepository userRepository,
 			ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry,
-			UserEventPublisher userEventPublisher) {
+			UserEventPublisher userEventPublisher, TaskMapper taskMapper) {
 		this.taskRepository = taskRepository;
 		this.projectRepository = projectRepository;
 		this.projectMemberRepository = projectMemberRepository;
@@ -60,6 +61,7 @@ public class TaskService {
 		this.eventPublisher = eventPublisher;
 		this.meterRegistry = meterRegistry;
 		this.userEventPublisher = userEventPublisher;
+		this.taskMapper = taskMapper;
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
@@ -83,7 +85,7 @@ public class TaskService {
 				eventPublisher.publishEvent(new TaskAssignedEvent(saved.getId(), assigneeId, actorId));
 			}
 
-			return toResponse(saved, projectId);
+			return taskMapper.toResponse(saved, projectId);
 		}
 		finally {
 			// Covers the whole method, not just the insert - a slow permission
@@ -122,14 +124,14 @@ public class TaskService {
 						.collect(Collectors.groupingBy(TaskRepository.TaskLabelRow::getTaskId,
 								Collectors.mapping(TaskRepository.TaskLabelRow::getLabelName, Collectors.toList())));
 
-		return PageResponse
-				.from(page.map(task -> toSummary(task, labelNamesByTaskId.getOrDefault(task.getId(), List.of()))));
+		return PageResponse.from(page.map(task -> taskMapper.toSummary(task,
+				labelNamesByTaskId.getOrDefault(task.getId(), List.of()).stream().sorted().toList())));
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MEMBER')")
 	@Transactional(readOnly = true)
 	public TaskResponse getTask(UUID projectId, UUID taskId) {
-		return toResponse(findTaskInProjectOrThrow(projectId, taskId), projectId);
+		return taskMapper.toResponse(findTaskInProjectOrThrow(projectId, taskId), projectId);
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'CONTRIBUTE')")
@@ -178,7 +180,7 @@ public class TaskService {
 		if (!task.getVersion().equals(request.version())) {
 			publishTaskUpdated(task, projectId, assigneeBefore, actorId);
 		}
-		return toResponse(task, projectId);
+		return taskMapper.toResponse(task, projectId);
 	}
 
 	// A signal, not a notification: it tells the people whose task lists this
@@ -232,20 +234,6 @@ public class TaskService {
 		return taskRepository.findByIdAndProject_Id(taskId, projectId)
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Task not found"));
-	}
-
-	private TaskResponse toResponse(Task task, UUID projectId) {
-		User assignee = task.getAssignee();
-		return new TaskResponse(task.getId(), projectId, task.getTitle(), task.getDescription(), task.getStatus(),
-				task.getPriority(), task.getDueDate(), assignee == null ? null : assignee.getId(),
-				assignee == null ? null : assignee.getEmail(), task.getVersion(), task.getCreatedAt());
-	}
-
-	private TaskSummaryProjection toSummary(Task task, List<String> labelNames) {
-		User assignee = task.getAssignee();
-		return new TaskSummaryProjection(task.getId(), task.getTitle(), task.getStatus(), task.getPriority(),
-				task.getDueDate(), assignee == null ? null : assignee.getId(),
-				assignee == null ? null : assignee.getEmail(), labelNames.stream().sorted().toList());
 	}
 
 }

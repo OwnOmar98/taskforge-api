@@ -24,13 +24,15 @@ public class TaskCommentService {
 	private final TaskCommentRepository taskCommentRepository;
 	private final UserRepository userRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final TaskMapper taskMapper;
 
 	public TaskCommentService(TaskRepository taskRepository, TaskCommentRepository taskCommentRepository,
-			UserRepository userRepository, ApplicationEventPublisher eventPublisher) {
+			UserRepository userRepository, ApplicationEventPublisher eventPublisher, TaskMapper taskMapper) {
 		this.taskRepository = taskRepository;
 		this.taskCommentRepository = taskCommentRepository;
 		this.userRepository = userRepository;
 		this.eventPublisher = eventPublisher;
+		this.taskMapper = taskMapper;
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
@@ -42,14 +44,14 @@ public class TaskCommentService {
 		TaskComment comment = taskCommentRepository.save(new TaskComment(task, author, body));
 		eventPublisher.publishEvent(new TaskCommentAddedEvent(taskId, comment.getId(), authorId));
 
-		return toResponse(comment);
+		return taskMapper.toResponse(comment);
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'MEMBER')")
 	@Transactional(readOnly = true)
 	public PageResponse<TaskCommentResponse> listComments(UUID taskId, Pageable pageable) {
 		Page<TaskComment> page = taskCommentRepository.findByTaskIdWithAuthor(taskId, pageable);
-		return PageResponse.from(page.map(this::toResponse));
+		return PageResponse.from(page.map(taskMapper::toResponse));
 	}
 
 	// Removes the comment through the parent Task's own collection rather than
@@ -70,11 +72,6 @@ public class TaskCommentService {
 		return taskRepository.findById(taskId)
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Task not found"));
-	}
-
-	private TaskCommentResponse toResponse(TaskComment comment) {
-		return new TaskCommentResponse(comment.getId(), comment.getAuthor().getId(), comment.getAuthor().getEmail(),
-				comment.getBody(), comment.getCreatedAt());
 	}
 
 }

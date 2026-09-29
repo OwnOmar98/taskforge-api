@@ -17,9 +17,11 @@ import com.taskforge.security.SecureTokenGenerator;
 public class WebhookService {
 
 	private final WebhookRepository webhookRepository;
+	private final WebhookMapper webhookMapper;
 
-	public WebhookService(WebhookRepository webhookRepository) {
+	public WebhookService(WebhookRepository webhookRepository, WebhookMapper webhookMapper) {
 		this.webhookRepository = webhookRepository;
+		this.webhookMapper = webhookMapper;
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -27,14 +29,13 @@ public class WebhookService {
 	public WebhookCreatedResponse createWebhook(UUID organizationId, String url) {
 		String secret = SecureTokenGenerator.generateRawToken();
 		Webhook webhook = webhookRepository.save(new Webhook(organizationId, url, secret));
-		return new WebhookCreatedResponse(webhook.getId(), webhook.getUrl(), webhook.getSecret(),
-				webhook.getCreatedAt());
+		return webhookMapper.toCreatedResponse(webhook);
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
 	@Transactional(readOnly = true)
 	public List<WebhookResponse> listWebhooks(UUID organizationId) {
-		return webhookRepository.findByOrganizationId(organizationId).stream().map(this::toResponse).toList();
+		return webhookRepository.findByOrganizationId(organizationId).stream().map(webhookMapper::toResponse).toList();
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -45,10 +46,6 @@ public class WebhookService {
 						"Webhook not found"));
 
 		webhookRepository.delete(webhook);
-	}
-
-	private WebhookResponse toResponse(Webhook webhook) {
-		return new WebhookResponse(webhook.getId(), webhook.getUrl(), webhook.getCreatedAt());
 	}
 
 }

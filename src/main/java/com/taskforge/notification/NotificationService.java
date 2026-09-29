@@ -12,8 +12,6 @@ import com.taskforge.common.exception.ResourceNotFoundException;
 import com.taskforge.notification.dto.CursorPageResponse;
 import com.taskforge.notification.dto.NotificationResponse;
 
-import tools.jackson.databind.ObjectMapper;
-
 // No @PreAuthorize anywhere here: every method is already scoped to the
 // caller's own userId, so there's no other-user permission decision to make
 // - unlike Task/Project/Organization resources, which need a real
@@ -22,11 +20,11 @@ import tools.jackson.databind.ObjectMapper;
 public class NotificationService {
 
 	private final NotificationRepository notificationRepository;
-	private final ObjectMapper objectMapper;
+	private final NotificationMapper notificationMapper;
 
-	public NotificationService(NotificationRepository notificationRepository, ObjectMapper objectMapper) {
+	public NotificationService(NotificationRepository notificationRepository, NotificationMapper notificationMapper) {
 		this.notificationRepository = notificationRepository;
-		this.objectMapper = objectMapper;
+		this.notificationMapper = notificationMapper;
 	}
 
 	@Transactional(readOnly = true)
@@ -44,7 +42,7 @@ public class NotificationService {
 						.encode()
 				: null;
 
-		return new CursorPageResponse<>(page.stream().map(this::toResponse).toList(), nextCursor, hasMore);
+		return new CursorPageResponse<>(page.stream().map(notificationMapper::toResponse).toList(), nextCursor, hasMore);
 	}
 
 	// Empty, not an error, when the anchor isn't one of this user's
@@ -56,7 +54,7 @@ public class NotificationService {
 				.map(anchor -> notificationRepository
 						.findNewerThanByUserId(userId, anchor.getCreatedAt(), anchor.getId(), limit)
 						.stream()
-						.map(this::toResponse)
+						.map(notificationMapper::toResponse)
 						.toList())
 				.orElse(List.of());
 	}
@@ -77,13 +75,6 @@ public class NotificationService {
 	@Transactional
 	public void markAllAsRead(UUID userId) {
 		notificationRepository.markAllAsRead(userId, Instant.now());
-	}
-
-	private NotificationResponse toResponse(Notification notification) {
-		Object payload = notification.getPayload() == null ? null
-				: objectMapper.readValue(notification.getPayload(), Object.class);
-		return new NotificationResponse(notification.getId(), notification.getType(), payload,
-				notification.getReadAt(), notification.getCreatedAt());
 	}
 
 }

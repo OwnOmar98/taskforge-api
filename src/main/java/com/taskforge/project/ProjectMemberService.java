@@ -31,16 +31,18 @@ public class ProjectMemberService {
 	private final UserRepository userRepository;
 	private final ProjectMemberRoleCacheService projectMemberRoleCacheService;
 	private final ApplicationEventPublisher eventPublisher;
+	private final ProjectMapper projectMapper;
 
 	public ProjectMemberService(ProjectService projectService, ProjectMemberRepository projectMemberRepository,
 			MembershipRepository membershipRepository, UserRepository userRepository,
-			ProjectMemberRoleCacheService projectMemberRoleCacheService, ApplicationEventPublisher eventPublisher) {
+			ProjectMemberRoleCacheService projectMemberRoleCacheService, ApplicationEventPublisher eventPublisher, ProjectMapper projectMapper) {
 		this.projectService = projectService;
 		this.projectMemberRepository = projectMemberRepository;
 		this.membershipRepository = membershipRepository;
 		this.userRepository = userRepository;
 		this.projectMemberRoleCacheService = projectMemberRoleCacheService;
 		this.eventPublisher = eventPublisher;
+		this.projectMapper = projectMapper;
 	}
 
 	// No @PreAuthorize: TenantInterceptor already requires org membership for
@@ -50,7 +52,7 @@ public class ProjectMemberService {
 	public PageResponse<ProjectMemberResponse> listMembers(UUID organizationId, UUID projectId, Pageable pageable) {
 		projectService.findProjectInOrgOrThrow(organizationId, projectId);
 		Page<ProjectMember> page = projectMemberRepository.findByProjectIdWithUser(projectId, pageable);
-		return PageResponse.from(page.map(this::toResponse));
+		return PageResponse.from(page.map(projectMapper::toResponse));
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
@@ -86,7 +88,7 @@ public class ProjectMemberService {
 		// Deferred to after commit - see MembershipService.changeRole.
 		AfterCommit.run(() -> projectMemberRoleCacheService.evict(projectId, targetUserId));
 
-		return toResponse(member);
+		return projectMapper.toResponse(member);
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
@@ -106,7 +108,7 @@ public class ProjectMemberService {
 		// expiry after a demotion is a real security bug, not a performance nit.
 		// Deferred to after commit - see MembershipService.changeRole.
 		AfterCommit.run(() -> projectMemberRoleCacheService.evict(projectId, targetUserId));
-		return toResponse(member);
+		return projectMapper.toResponse(member);
 	}
 
 	@PreAuthorize("hasPermission(#projectId, 'Project', 'MANAGE')")
@@ -125,11 +127,6 @@ public class ProjectMemberService {
 		return projectMemberRepository.findByProject_IdAndUser_Id(projectId, userId)
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Project membership not found"));
-	}
-
-	private ProjectMemberResponse toResponse(ProjectMember member) {
-		return new ProjectMemberResponse(member.getUser().getId(), member.getUser().getEmail(),
-				member.getUser().getFullName(), member.getRole());
 	}
 
 }

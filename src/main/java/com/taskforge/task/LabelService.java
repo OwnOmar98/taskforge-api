@@ -23,12 +23,14 @@ public class LabelService {
 	private final LabelRepository labelRepository;
 	private final OrganizationRepository organizationRepository;
 	private final TaskRepository taskRepository;
+	private final TaskMapper taskMapper;
 
 	public LabelService(LabelRepository labelRepository, OrganizationRepository organizationRepository,
-			TaskRepository taskRepository) {
+			TaskRepository taskRepository, TaskMapper taskMapper) {
 		this.labelRepository = labelRepository;
 		this.organizationRepository = organizationRepository;
 		this.taskRepository = taskRepository;
+		this.taskMapper = taskMapper;
 	}
 
 	@PreAuthorize("hasPermission(#organizationId, 'Organization', 'ADMIN')")
@@ -49,7 +51,7 @@ public class LabelService {
 			// saveAndFlush forces the insert (and the unique constraint it can
 			// violate) to happen synchronously here, not deferred to commit,
 			// where this catch couldn't see it.
-			return toResponse(labelRepository.saveAndFlush(new Label(organization, name)));
+			return taskMapper.toResponse(labelRepository.saveAndFlush(new Label(organization, name)));
 		}
 		catch (DataIntegrityViolationException e) {
 			throw new ConflictException(LabelErrorCode.LABEL_NAME_IN_USE,
@@ -62,7 +64,7 @@ public class LabelService {
 	@Transactional(readOnly = true)
 	public PageResponse<LabelResponse> listLabels(UUID organizationId, Pageable pageable) {
 		Page<Label> page = labelRepository.findByOrganization_Id(organizationId, pageable);
-		return PageResponse.from(page.map(this::toResponse));
+		return PageResponse.from(page.map(taskMapper::toResponse));
 	}
 
 	@PreAuthorize("hasPermission(#taskId, 'Task', 'CONTRIBUTE')")
@@ -89,11 +91,6 @@ public class LabelService {
 		return taskRepository.findById(taskId)
 				.orElseThrow(() -> new ResourceNotFoundException(GeneralErrorCode.RESOURCE_NOT_FOUND,
 						"Task not found"));
-	}
-
-	private LabelResponse toResponse(Label label) {
-		return new LabelResponse(label.getId(), label.getOrganization().getId(), label.getName(),
-				label.getCreatedAt());
 	}
 
 }
