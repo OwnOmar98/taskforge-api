@@ -109,6 +109,22 @@ app:
       # database round trip, bounding the job's memory use regardless of how
       # many are overdue across every organization on a given day.
       page-size: 500
+  webhook:
+    outbox:
+      # How often each instance polls for due deliveries. Every instance can
+      # poll: claiming uses SKIP LOCKED, so they split the work.
+      poll-interval: 2s
+      batch-size: 50
+      # Retry schedule for a failing endpoint: base-backoff doubling per
+      # attempt, capped at max-backoff. 8 attempts at 10s base spans ~21
+      # minutes before a delivery is marked FAILED (redeliverable by an admin).
+      max-attempts: 8
+      base-backoff: 10s
+      max-backoff: 1h
+      # A claimed delivery not finished within this is presumed abandoned (the
+      # instance died mid-send) and becomes claimable again. Must comfortably
+      # exceed the worst case of one send's own retries and timeouts.
+      claim-timeout: 5m
   # GET /api/v1/events/stream (Server-Sent Events).
   realtime:
     # Comfortably under the ~60s idle timeout common to proxies and load
