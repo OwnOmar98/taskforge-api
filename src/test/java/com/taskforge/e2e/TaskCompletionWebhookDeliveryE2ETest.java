@@ -54,10 +54,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // Distinct from WebhookSenderTest (PR24): that one calls WebhookSender.send()
 // directly, unit-testing the resilience behavior in isolation. This one
 // never touches WebhookSender at all - it marks a task done through the real
-// HTTP endpoint and lets the real TaskStatusChangedEvent, the real async
-// WebhookEventListener, and the real signing all run on their own, then
-// verifies what WireMock actually received. That's the one path no other
-// test exercises end-to-end.
+// HTTP endpoint and lets the real TaskStatusChangedEvent, the outbox row its
+// listener writes, the scheduled relay that picks it up, and the real signing
+// all run on their own, then verifies what WireMock actually received. That's
+// the one path no other test exercises end-to-end.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -101,8 +101,8 @@ class TaskCompletionWebhookDeliveryE2ETest {
 								new UpdateTaskRequest(null, null, TaskStatus.DONE, null, null, null, 0L))))
 				.andExpect(status().isOk());
 
-		// Delivery is async (PR24) - wait for the real listener to actually
-		// fire rather than asserting immediately after the HTTP response.
+		// Delivery happens later, from the outbox, on the relay's own schedule -
+		// wait for it rather than asserting immediately after the HTTP response.
 		await().atMost(Duration.ofSeconds(5))
 				.untilAsserted(() -> wireMock.verify(1, postRequestedFor(urlEqualTo("/hook"))));
 

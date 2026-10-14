@@ -16,22 +16,22 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.redis.testcontainers.RedisContainer;
-import com.taskforge.audit.AuditLogRepository;
 import com.taskforge.organization.Organization;
 import com.taskforge.organization.OrganizationRepository;
 
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.micrometer.core.instrument.MeterRegistry;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -62,16 +62,10 @@ class WebhookSenderTest {
 	private OrganizationRepository organizationRepository;
 
 	@Autowired
-	private AuditLogRepository auditLogRepository;
-
-	@Autowired
 	private CircuitBreakerRegistry circuitBreakerRegistry;
 
 	@Autowired
 	private WebhookDeliveryHealthIndicator webhookDeliveryHealthIndicator;
-
-	@Autowired
-	private MeterRegistry meterRegistry;
 
 	private Webhook webhook;
 
@@ -112,18 +106,19 @@ class WebhookSenderTest {
 		assertEquals("UP", webhookDeliveryHealthIndicator.health().getStatus().getCode());
 	}
 
+	// The sender only reports the failure now; what happens next (retry later
+	// or give up) is the outbox's decision - see WebhookOutboxTest.
 	@Test
-	void aResponseSlowerThanTheTimeLimitIsTreatedAsAFailure() throws ExecutionException, InterruptedException {
+	void aResponseSlowerThanTheTimeLimitIsTreatedAsAFailure() {
 		wireMock.stubFor(post(urlEqualTo("/hook")).willReturn(aResponse().withStatus(200).withFixedDelay(5000)));
 
-		double countBefore = meterRegistry.counter("webhook.delivery.failures").count();
+		assertThrows(ExecutionException.class,
+				() -> webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get());
 
-		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();
-
-		assertTrue(auditLogRepository.findAll().stream()
-				.anyMatch(entry -> "WEBHOOK_DELIVERY_FAILED".equals(entry.getAction())
-						&& entry.getEntityId().equals(webhook.getId())));
-		assertEquals(countBefore + 1, meterRegistry.counter("webhook.delivery.failures").count());
+		// The endpoint always answers 200 - only the time limit can have made
+		// these attempts fail. (The final error is the breaker short-circuiting
+		// the last retry, since two timeouts already tripped it in this profile.)
+		assertEquals(2, circuitBreakerFor(webhook).getMetrics().getNumberOfFailedCalls());
 	}
 
 	@Test
@@ -136,7 +131,7 @@ class WebhookSenderTest {
 		// the breaker mid-flight: attempt 1 and attempt 2 both fail and get
 		// recorded, opening it before a 3rd attempt would otherwise fire -
 		// that 3rd attempt is short-circuited instead of reaching WireMock.
-		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();
+		assertThrows(ExecutionException.class, () -> webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get());
 
 		wireMock.verify(2, postRequestedFor(urlEqualTo("/hook")));
 		assertEquals(CircuitBreaker.State.OPEN, circuitBreakerFor(webhook).getState());
@@ -144,7 +139,9 @@ class WebhookSenderTest {
 				"an open circuit breaker should surface as a degraded (not down) health signal");
 
 		int requestCountBefore = wireMock.findAll(postRequestedFor(urlEqualTo("/hook"))).size();
-		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();
+		ExecutionException shortCircuited = assertThrows(ExecutionException.class,
+				() -> webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get());
+		assertInstanceOf(CallNotPermittedException.class, shortCircuited.getCause());
 		int requestCountAfter = wireMock.findAll(postRequestedFor(urlEqualTo("/hook"))).size();
 
 		assertEquals(requestCountBefore, requestCountAfter,
@@ -169,7 +166,7 @@ class WebhookSenderTest {
 		// Same reasoning as aConsistentlyFailingEndpointTripsTheCircuitBreaker
 		// AndStopsRetrying: one delivery's own retries are enough to trip this
 		// org's breaker in the test profile.
-		webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get();
+		assertThrows(ExecutionException.class, () -> webhookSender.send(webhook, "{}", UUID.randomUUID().toString()).get());
 		assertEquals(CircuitBreaker.State.OPEN, circuitBreakerFor(webhook).getState());
 
 		webhookSender.send(healthyWebhook, "{}", UUID.randomUUID().toString()).get();
@@ -177,10 +174,6 @@ class WebhookSenderTest {
 		assertEquals(CircuitBreaker.State.CLOSED, circuitBreakerFor(healthyWebhook).getState(),
 				"a different organization's breaker must be unaffected by this one tripping");
 		wireMock.verify(1, postRequestedFor(urlEqualTo("/healthy-hook")));
-		assertTrue(auditLogRepository.findAll().stream()
-				.noneMatch(entry -> "WEBHOOK_DELIVERY_FAILED".equals(entry.getAction())
-						&& entry.getEntityId().equals(healthyWebhook.getId())),
-				"the healthy organization's delivery must not be recorded as failed");
 	}
 
 }

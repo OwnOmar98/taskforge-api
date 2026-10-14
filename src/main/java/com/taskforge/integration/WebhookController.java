@@ -3,6 +3,10 @@ package com.taskforge.integration;
 import java.util.List;
 import java.util.UUID;
 
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,11 +14,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.taskforge.common.PageResponse;
 import com.taskforge.integration.dto.CreateWebhookRequest;
 import com.taskforge.integration.dto.WebhookCreatedResponse;
+import com.taskforge.integration.dto.WebhookDeliveryResponse;
 import com.taskforge.integration.dto.WebhookResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,6 +31,8 @@ import jakarta.validation.Valid;
 // Not converted to PageResponse/Pageable like the other listing endpoints in
 // PR29: webhook count per organization is small and operator-managed, not a
 // growing, user-generated collection - there's no realistic case for paging.
+// A webhook's deliveries are the opposite (one row per event, forever), so
+// that listing does page.
 @Tag(name = "Webhooks")
 @RestController
 @RequestMapping("/api/v1/organizations/{orgId}/webhooks")
@@ -46,6 +55,22 @@ public class WebhookController {
 	@GetMapping
 	public List<WebhookResponse> list(@PathVariable UUID orgId) {
 		return webhookService.listWebhooks(orgId);
+	}
+
+	@Operation(summary = "List a webhook's deliveries, optionally filtered by status")
+	@GetMapping("/{webhookId}/deliveries")
+	public PageResponse<WebhookDeliveryResponse> listDeliveries(@PathVariable UUID orgId, @PathVariable UUID webhookId,
+			@RequestParam(required = false) WebhookDeliveryStatus status,
+			@ParameterObject @PageableDefault(size = 20, sort = "createdAt",
+					direction = Sort.Direction.DESC) Pageable pageable) {
+		return webhookService.listDeliveries(orgId, webhookId, status, pageable);
+	}
+
+	@Operation(summary = "Redeliver a permanently failed delivery")
+	@PostMapping("/{webhookId}/deliveries/{deliveryId}/redeliver")
+	public WebhookDeliveryResponse redeliver(@PathVariable UUID orgId, @PathVariable UUID webhookId,
+			@PathVariable UUID deliveryId) {
+		return webhookService.redeliver(orgId, webhookId, deliveryId);
 	}
 
 	@Operation(summary = "Delete a webhook")

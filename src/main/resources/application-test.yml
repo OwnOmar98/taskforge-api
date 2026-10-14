@@ -40,6 +40,14 @@ resilience4j:
 
 app:
   encryption-key: QWWuqTK9UTB7di+bNrP0o0LUWB/hT4JQ1NC0BomNkEM=
+  # Fast and few, so an end-to-end delivery or a full retry-until-dead run
+  # finishes within a test's wait.
+  webhook:
+    outbox:
+      poll-interval: 200ms
+      max-attempts: 3
+      base-backoff: 1s
+      max-backoff: 5s
   jwt:
     secret: test-only-jwt-signing-secret-0123456789-0123456789
   # Generous enough that other test classes' incidental /login calls (getting
