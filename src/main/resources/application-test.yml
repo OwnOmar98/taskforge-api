@@ -44,6 +44,8 @@ app:
   # finishes within a test's wait.
   webhook:
     outbox:
+      # Off so cached test contexts don't poll stopped databases; the E2E test turns it on.
+      relay-enabled: false
       poll-interval: 200ms
       max-attempts: 3
       base-backoff: 1s

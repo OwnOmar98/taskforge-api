@@ -59,10 +59,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
-// The scheduled poll is switched off: every relay cycle here is driven
-// explicitly through relayOnce()/claimDue(), so nothing races the assertions.
-// The scheduled path itself is covered by TaskCompletionWebhookDeliveryE2ETest.
-@SpringBootTest(properties = "app.webhook.outbox.relay-enabled=false")
+// The scheduled poll is off (test profile default); relay cycles are driven
+// through relayOnce()/claimDue() so nothing races the assertions.
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers

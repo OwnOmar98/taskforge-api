@@ -161,6 +161,24 @@ them: a task's comments and attachments, a project's tasks) stay in the database
   `task.updated`.
 - Nothing is purged automatically yet.
 
+## Scheduled jobs
+
+Every instance runs the same schedules, so each job decides for itself whether it is safe to run
+everywhere at once:
+
+| Job                        | Schedule     | Runs on                                                           |
+| -------------------------- | ------------ | ----------------------------------------------------------------- |
+| Overdue-task digest        | daily, 06:00 | one instance per day, via a ShedLock lock in the `shedlock` table |
+| Webhook outbox relay       | every 2s     | every instance (rows are claimed with `FOR UPDATE SKIP LOCKED`)   |
+| Real-time stream heartbeat | every 25s    | every instance (each keeps its own open connections alive)        |
+
+- The digest lock is held for at least 5 minutes even though the job takes about a second, so another
+  instance whose trigger fires a few seconds later still finds it taken. If an instance dies holding
+  it, the lock expires after 30 minutes. Lock times come from the database clock, not each server's.
+- The lock only saves the duplicate work. The digest is still safe without it: a second run for the
+  same day inserts nothing (`ON CONFLICT DO NOTHING` on user, organization and date).
+- To see who ran a job last: `select * from shedlock;`
+
 ## Environment variables
 
 None of these have a real value in git anywhere - `dev`/`test` use clearly-labeled dummy secrets in
