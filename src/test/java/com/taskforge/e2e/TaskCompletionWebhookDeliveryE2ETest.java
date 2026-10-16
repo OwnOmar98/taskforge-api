@@ -58,7 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // listener writes, the scheduled relay that picks it up, and the real signing
 // all run on their own, then verifies what WireMock actually received. That's
 // the one path no other test exercises end-to-end.
-@SpringBootTest
+@SpringBootTest(properties = "app.webhook.outbox.relay-enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers

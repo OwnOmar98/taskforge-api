@@ -22,7 +22,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,14 +74,7 @@ public class OverdueTaskDigestJob {
 		this.pageSize = pageSize;
 	}
 
-	@Scheduled(cron = "0 0 6 * * *")
-	public void run() {
-		runForDate(LocalDate.now());
-	}
-
-	// A separate, public, directly-callable method - not folded into run() -
-	// so a test can trigger a real run for a specific date without waiting on
-	// the cron schedule, per this PR's own definition of done.
+	// Date-driven so a test can run it for any day without waiting on the cron.
 	@Transactional
 	public void runForDate(LocalDate today) {
 		Map<AssigneeInOrganization, List<UUID>> taskIdsByAssignee = collectOverdueTaskIdsByAssignee(today);
