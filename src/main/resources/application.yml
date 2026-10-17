@@ -9,6 +9,25 @@ spring:
     enabled: true
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  rabbitmq:
+    # An event is only marked published once the broker has confirmed it
+    # and routed it to a queue - see RabbitEventTransport.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        concurrency: 2
+        prefetch: 10
+        # A message that still fails after the retries below is rejected
+        # without requeue, so it dead-letters instead of looping forever.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 2
+          initial-interval: 1s
+          multiplier: 2
 
 server:
   # Stop accepting new requests but let in-flight ones finish (up to the
@@ -37,7 +56,9 @@ management:
         # is deliberately excluded here - an open circuit breaker for one
         # org's webhook means that delivery is degraded, not that this pod
         # is unfit to receive traffic, so it must never fail a readiness
-        # probe and take a healthy instance out of rotation.
+        # probe and take a healthy instance out of rotation. rabbit is left
+        # out too: with the broker down, events wait in the outbox and
+        # requests still succeed.
         readiness:
           include: readinessState,db,redis
         liveness:
@@ -103,6 +124,17 @@ app:
   login-lockout:
     max-failures: 5
     lockout-duration: 15m
+  events:
+    transport: rabbitmq
+    outbox:
+      # The safety net behind the post-commit nudge (see OutboxEventRelay):
+      # picks up anything a nudge missed and retries failed publishes.
+      poll-interval: 5s
+      batch-size: 100
+      claim-timeout: 1m
+      # Retry schedule while the broker is unreachable or rejects a publish.
+      base-backoff: 2s
+      max-backoff: 5m
   notification:
     overdue-digest:
       # How many overdue tasks OverdueTaskDigestJob pulls into memory per

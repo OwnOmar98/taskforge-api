@@ -9,31 +9,29 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-// A dedicated, bounded pool - not the default SimpleAsyncTaskExecutor, which
+// Dedicated, bounded pools - not the default SimpleAsyncTaskExecutor, which
 // spawns a brand new unbounded thread per @Async call with no queue or limit
-// at all. Notification creation is deliberately best-effort (see
-// NotificationEventListener), but "best-effort" still shouldn't mean
-// "unbounded thread creation under load."
+// at all.
 @Configuration
 @EnableAsync
 public class AsyncConfig {
 
-	@Bean(name = "notificationExecutor")
-	public Executor notificationExecutor() {
+	// Runs OutboxEventRelay's post-commit nudges. One thread is enough: a pass
+	// publishes a whole batch, and nudges coalesce while one is pending.
+	@Bean(name = "eventRelayExecutor")
+	public Executor eventRelayExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(2);
-		executor.setMaxPoolSize(10);
-		executor.setQueueCapacity(500);
-		executor.setThreadNamePrefix("notification-");
+		executor.setCorePoolSize(1);
+		executor.setMaxPoolSize(1);
+		executor.setQueueCapacity(1);
+		executor.setThreadNamePrefix("event-relay-");
 		configureGracefulShutdown(executor);
 		executor.initialize();
 		return executor;
 	}
 
-	// Kept separate from notificationExecutor: webhook delivery makes real
-	// network calls to third-party endpoints we don't control, which can be
-	// slow or hang, and shouldn't be able to starve the fast, purely-local
-	// notification-creation work of threads.
+	// Webhook delivery makes real network calls to third-party endpoints we
+	// don't control, which can be slow or hang, so it gets a pool of its own.
 	@Bean(name = "webhookExecutor")
 	public Executor webhookExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -65,7 +63,7 @@ public class AsyncConfig {
 	// server.shutdown=graceful only covers the web server itself (stop
 	// accepting new requests, let in-flight ones finish) - these
 	// manually-defined executors need the same instruction explicitly, or a
-	// shutdown could still cut off an in-flight notification/webhook send
+	// shutdown could still cut off an in-flight relay pass or webhook send
 	// mid-task rather than letting it finish first.
 	private void configureGracefulShutdown(ThreadPoolTaskExecutor executor) {
 		executor.setWaitForTasksToCompleteOnShutdown(true);
