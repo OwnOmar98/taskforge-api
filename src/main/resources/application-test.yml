@@ -7,6 +7,11 @@ spring:
     properties:
       hibernate:
         generate_statistics: true
+  rabbitmq:
+    listener:
+      simple:
+        retry:
+          initial-interval: 100ms
 
 # Small, fast numbers so resilience tests are deterministic and quick, not
 # because production would ever want a circuit breaker this trigger-happy.
@@ -42,6 +47,14 @@ app:
   encryption-key: QWWuqTK9UTB7di+bNrP0o0LUWB/hT4JQ1NC0BomNkEM=
   # Fast and few, so an end-to-end delivery or a full retry-until-dead run
   # finishes within a test's wait.
+  # In-process, so only the broker tests need a RabbitMQ container; polling
+  # off for the same reason as the webhook relay below (nudges still run).
+  events:
+    transport: in-process
+    outbox:
+      poll-enabled: false
+      base-backoff: 1s
+      max-backoff: 5s
   webhook:
     outbox:
       # Off so cached test contexts don't poll stopped databases; the E2E test turns it on.
@@ -73,3 +86,10 @@ app:
     access-key: minioadmin
     secret-key: minioadmin
     force-path-style: true
+
+# No broker in the in-process tests, so its health check would always be DOWN;
+# the broker tests switch it back on.
+management:
+  health:
+    rabbit:
+      enabled: false

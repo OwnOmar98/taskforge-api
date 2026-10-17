@@ -17,7 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -32,8 +31,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.redis.testcontainers.RedisContainer;
 import com.taskforge.audit.AuditLogRepository;
-import com.taskforge.audit.events.TaskStatusChangedEvent;
 import com.taskforge.integration.WebhookOutbox.ClaimedDelivery;
+import com.taskforge.messaging.DomainEvent;
+import com.taskforge.messaging.DomainEventTypes;
+import com.taskforge.messaging.TaskEventPayload;
 import com.taskforge.organization.MembershipRole;
 import com.taskforge.organization.Organization;
 import com.taskforge.security.JwtService;
@@ -100,7 +101,7 @@ class WebhookOutboxTest {
 	private TestDataFactory testData;
 
 	@Autowired
-	private ApplicationEventPublisher eventPublisher;
+	private WebhookEventHandler webhookEventHandler;
 
 	@Autowired
 	private PlatformTransactionManager transactionManager;
@@ -143,16 +144,25 @@ class WebhookOutboxTest {
 	}
 
 	@Test
-	void theOutboxRowCommitsWithTheChangeAndRollsBackWithIt() {
-		tx.executeWithoutResult(status -> {
-			publishTaskCompleted();
-			status.setRollbackOnly();
-		});
-		assertEquals(0, deliveryCount(), "a rolled-back change must leave no delivery behind");
+	void aCompletedTaskEventEnqueuesOneDeliveryPerWebhookEvenWhenDeliveredTwice() {
+		webhookRepository.saveAndFlush(new Webhook(organization.getId(), wireMock.baseUrl() + "/other", "secret-2"));
+		DomainEvent completed = taskEvent(TaskStatus.DONE);
 
-		tx.executeWithoutResult(status -> publishTaskCompleted());
-		assertEquals(1, deliveryCount());
-		assertEquals(WebhookDeliveryStatus.PENDING, onlyDelivery().getStatus());
+		webhookEventHandler.handle(completed);
+		webhookEventHandler.handle(completed);
+
+		List<WebhookDelivery> deliveries = deliveryRepository.findAll().stream()
+				.filter(d -> d.getOrganizationId().equals(organization.getId()))
+				.toList();
+		assertEquals(2, deliveries.size(), "one delivery per webhook, and the duplicate event adds none");
+		assertTrue(deliveries.stream().allMatch(d -> d.getStatus() == WebhookDeliveryStatus.PENDING));
+	}
+
+	@Test
+	void aStatusChangeOtherThanDoneEnqueuesNothing() {
+		webhookEventHandler.handle(taskEvent(TaskStatus.IN_PROGRESS));
+
+		assertEquals(0, deliveryCount());
 	}
 
 	@Test
@@ -333,9 +343,11 @@ class WebhookOutboxTest {
 		assertEquals(403, status(get(deliveriesUrl()), member));
 	}
 
-	private void publishTaskCompleted() {
-		eventPublisher.publishEvent(new TaskStatusChangedEvent(organization.getId(), owner.getId(), UUID.randomUUID(),
-				TaskStatus.IN_PROGRESS, TaskStatus.DONE));
+	private DomainEvent taskEvent(TaskStatus newStatus) {
+		TaskEventPayload payload = new TaskEventPayload(UUID.randomUUID(), organization.getId(), owner.getId(), null,
+				TaskStatus.TODO, newStatus, null);
+		return new DomainEvent(UUID.randomUUID(), DomainEventTypes.TASK_STATUS_CHANGED, Instant.now(),
+				objectMapper.valueToTree(payload));
 	}
 
 	private WebhookDelivery enqueue() {

@@ -53,7 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-class NotificationEventListenerTest {
+class NotificationEventHandlerTest {
 
 	@Container
 	@ServiceConnection
@@ -101,9 +101,9 @@ class NotificationEventListenerTest {
 								new CreateTaskRequest("Ship it", null, TaskPriority.MEDIUM, null, assignee.getId()))))
 				.andExpect(status().isCreated());
 
-		// The listener runs AFTER_COMMIT on a background thread - the row
-		// genuinely doesn't exist yet the instant the response comes back,
-		// proving the request didn't wait on it.
+		// The notification is created from the outbox after the request's
+		// transaction commits, on another thread - the row genuinely doesn't
+		// exist yet the instant the response comes back.
 		assertEquals(0, notificationRepository.countByUserId(assignee.getId()));
 
 		await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {

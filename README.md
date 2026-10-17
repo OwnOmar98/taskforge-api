@@ -8,8 +8,10 @@ incrementally as a series of independent, reviewable PRs.
 - Java 25, Spring Boot 4.1.1 (Spring Framework 7), Maven
 - PostgreSQL + Flyway (versioned migrations, no auto-DDL)
 - Redis (permission-check caching, rate limiting, pub/sub fan-out for real-time events)
+- RabbitMQ (domain events from a transactional outbox to notification and webhook consumers)
 - Spring Security / JWT (access + rotating refresh tokens)
-- Resilience4j (retry/circuit breaker/timeout on outbound webhook delivery), with a transactional outbox for durable delivery
+- Resilience4j (retry/circuit breaker/timeout on outbound webhook delivery), with a transactional outbox for durable
+  delivery
 - S3-compatible object storage (DigitalOcean Spaces in prod; LocalStack in tests/local dev)
 - springdoc-openapi (Swagger UI, `/v3/api-docs`)
 - Testcontainers for integration tests; GitHub Actions CI (migration verification, full
@@ -18,7 +20,8 @@ incrementally as a series of independent, reviewable PRs.
 ## Current status
 
 Feature-complete: multi-tenant orgs/projects/tasks, JWT auth, role-based permissions, comments,
-labels, attachments, notifications, a real-time SSE event stream, outbound webhooks, audit logging,
+labels, attachments, notifications, a real-time SSE event stream, outbound webhooks, domain events over
+RabbitMQ, audit logging,
 observability (actuator/metrics/health), a CI pipeline, and full OpenAPI documentation.
 
 ## Running locally
@@ -29,9 +32,10 @@ Requires Java 25.
 ./mvnw spring-boot:run
 ```
 
-By default this runs without an active profile. The `dev` profile needs Postgres and Redis
-(`docker compose up -d` starts both, plus a local LocalStack S3 on port 4566 for manually poking at
-the storage feature) and the DO Spaces variables in `.env.example` sourced into your shell:
+By default this runs without an active profile. The `dev` profile needs Postgres, Redis and RabbitMQ
+(`docker compose up -d` starts all three, plus a local LocalStack S3 on port 4566 for manually poking
+at the storage feature) and the DO Spaces variables in `.env.example` sourced into your shell. The
+RabbitMQ management UI is at http://localhost:15672 (guest/guest).
 
 ```
 docker compose up -d
@@ -74,28 +78,59 @@ Organization admins register webhook URLs (`POST /api/v1/organizations/{orgId}/w
 secret is returned once, in the create response. When a task is marked `DONE`, every webhook of its
 organization receives a `task.completed` event.
 
-**Delivery is durable (a transactional outbox).** The delivery is recorded in `webhook_deliveries` in the
-same transaction as the task change, so a committed change always gets its webhook, even if the app
-crashes right after, and a rolled-back change never does. A relay on every instance polls for due
-deliveries and sends them. It claims rows with `FOR UPDATE SKIP LOCKED`, so instances share the work
-without sending anything twice.
+**Delivery is durable.** Completing a task writes a domain event in the same transaction (see
+[Domain events and RabbitMQ](#domain-events-and-rabbitmq)); the webhooks consumer turns it into one
+`webhook_deliveries` row per webhook. A relay on every instance polls for due deliveries and sends them.
+It claims rows with `FOR UPDATE SKIP LOCKED`, so instances share the work without sending anything
+twice.
 
 - **Headers:**
-  - `X-Webhook-Signature`: hex HMAC-SHA256 of the raw body, keyed with the secret.
-  - `X-Idempotency-Key`: the same on every retry of a delivery, so de-duplicate on it.
+    - `X-Webhook-Signature`: hex HMAC-SHA256 of the raw body, keyed with the secret.
+    - `X-Idempotency-Key`: the same on every retry of a delivery, so de-duplicate on it.
 - **Retries:**
-  - Short in-process retries (Resilience4j: retry, a per-organization circuit breaker, a timeout).
-  - Then outbox retries with exponential backoff: `app.webhook.outbox.base-backoff`, doubling, capped at
-    `max-backoff`.
-  - After `max-attempts`, the delivery becomes `FAILED` and is audited as `WEBHOOK_DELIVERY_FAILED`.
+    - Short in-process retries (Resilience4j: retry, a per-organization circuit breaker, a timeout).
+    - Then outbox retries with exponential backoff: `app.webhook.outbox.base-backoff`, doubling, capped at
+      `max-backoff`.
+    - After `max-attempts`, the delivery becomes `FAILED` and is audited as `WEBHOOK_DELIVERY_FAILED`.
 - **Guarantee:** at-least-once. A crash between sending and recording the result means a resend (same
   idempotency key), never a lost delivery.
 - **Admin endpoints:**
-  - `GET .../webhooks/{webhookId}/deliveries?status=FAILED` lists deliveries (`PENDING`, `IN_FLIGHT`,
-    `DELIVERED`, `FAILED`).
-  - `POST .../webhooks/{webhookId}/deliveries/{deliveryId}/redeliver` re-queues a `FAILED` one.
+    - `GET .../webhooks/{webhookId}/deliveries?status=FAILED` lists deliveries (`PENDING`, `IN_FLIGHT`,
+      `DELIVERED`, `FAILED`).
+    - `POST .../webhooks/{webhookId}/deliveries/{deliveryId}/redeliver` re-queues a `FAILED` one.
 - **Metrics:** `webhook.delivery.failures` (failed attempts) and `webhook.delivery.dead` (deliveries that
   gave up).
+
+## Domain events and RabbitMQ
+
+Task changes that other parts of the system react to are published as domain events:
+`task.status_changed`, `task.assigned` and `task.comment_added`.
+
+```
+task change ──► outbox_events row (same transaction)
+            ──► relay ──► exchange "taskforge.events" (topic, routing key = event type)
+                            ├─► queue taskforge.notifications ──► creates the notification + live push
+                            └─► queue taskforge.webhooks      ──► creates webhook deliveries (task.status_changed only)
+```
+
+- **Nothing is lost between the database and the broker.** The event is a row in `outbox_events`,
+  committed with the change. The relay publishes it right after the commit, and a 5-second poll on
+  every instance picks up anything that was missed (including after a crash) or failed.
+- **Published means confirmed.** A row only becomes `PUBLISHED` once RabbitMQ confirms the message
+  and has routed it to a queue. Otherwise it goes back to `PENDING` with exponential backoff
+  (`app.events.outbox.base-backoff`, doubling, capped at `max-backoff`), indefinitely.
+- **Each consumer has its own queue,** so a slow or failing consumer doesn't hold up the others.
+- **Consumers are idempotent.** Delivery is at-least-once (a broker redelivery, or a republish after
+  a crash), so each consumer records the event id in `processed_events` in the same transaction as
+  its work, and skips an event it has already handled.
+- **Failures:** a listener that throws is retried twice in place (1s, then 2s), then the message is
+  rejected and dead-lettered to `<queue>.dlq` (for example `taskforge.notifications.dlq`). A message
+  that can't be read at all is dead-lettered straight away. Nothing re-processes a dead-lettered
+  message automatically: inspect it in the management UI and move it back once fixed.
+- **Ordering** is not guaranteed between events, and nothing here relies on it.
+- **Without a broker:** `app.events.transport: in-process` runs the same consumers directly from the
+  outbox. The test profile uses it so only the broker tests need a RabbitMQ container.
+- **Metric:** `events.outbox.publish.failures`.
 
 ## Real-time events
 
@@ -110,7 +145,7 @@ curl -N -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/v1/ev
 The SSE `event:` field is the event type; clients dispatch on it. `data:` is that type's JSON payload.
 
 | `event:`       | `id:`           | `data:`                                               | Sent to                                                                             |
-| -------------- | --------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
+|----------------|-----------------|-------------------------------------------------------|-------------------------------------------------------------------------------------|
 | `notification` | notification id | same shape as one item of `GET /api/v1/notifications` | the notification's recipient                                                        |
 | `task.updated` | none            | `{taskId, projectId, version}`                        | the task's assignee, plus the previous assignee on a reassignment, never the editor |
 | `task.deleted` | none            | `{taskId, projectId}`                                 | the task's assignee, never the deleter                                              |
@@ -144,7 +179,7 @@ Tasks and projects are soft-deleted: `DELETE` hides them everywhere, but the row
 them: a task's comments and attachments, a project's tasks) stay in the database and can be restored.
 
 | Action            | Endpoint                                                          | Who                        |
-| ----------------- | ----------------------------------------------------------------- | -------------------------- |
+|-------------------|-------------------------------------------------------------------|----------------------------|
 | Delete a task     | `DELETE /api/v1/projects/{projectId}/tasks/{taskId}`              | project CONTRIBUTOR+       |
 | Restore a task    | `POST /api/v1/projects/{projectId}/tasks/{taskId}/restore`        | project CONTRIBUTOR+       |
 | Delete a project  | `DELETE /api/v1/organizations/{orgId}/projects/{projectId}`       | org ADMIN+ or project LEAD |
@@ -167,9 +202,10 @@ Every instance runs the same schedules, so each job decides for itself whether i
 everywhere at once:
 
 | Job                        | Schedule     | Runs on                                                           |
-| -------------------------- | ------------ | ----------------------------------------------------------------- |
+|----------------------------|--------------|-------------------------------------------------------------------|
 | Overdue-task digest        | daily, 06:00 | one instance per day, via a ShedLock lock in the `shedlock` table |
 | Webhook outbox relay       | every 2s     | every instance (rows are claimed with `FOR UPDATE SKIP LOCKED`)   |
+| Domain event outbox relay  | every 5s     | every instance (same claiming), plus right after each commit      |
 | Real-time stream heartbeat | every 25s    | every instance (each keeps its own open connections alive)        |
 
 - The digest lock is held for at least 5 minutes even though the job takes about a second, so another
@@ -186,12 +222,14 @@ their own `application-*.yml`, and `prod` requires every secret below to be set 
 (the app fails to start rather than silently running with a blank one).
 
 | Variable                                                     | Required in prod      | Notes                                                                       |
-| ------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------- |
+|--------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------|
 | `DB_HOST`, `DB_PORT`, `DB_NAME`                              | No (defaults)         | `localhost`, `5432`, `taskforge`                                            |
 | `DB_USERNAME`, `DB_PASSWORD`                                 | Yes                   | No default - the app won't start without them                               |
 | `DB_POOL_MAX_SIZE`, `DB_POOL_MIN_IDLE`                       | No (defaults)         | HikariCP pool sizing, `20`/`5`                                              |
 | `REDIS_HOST`, `REDIS_PORT`                                   | No (defaults)         | `localhost`, `6379`                                                         |
 | `REDIS_PASSWORD`                                             | No (defaults to none) | Set if the Redis instance requires auth                                     |
+| `RABBITMQ_HOST`, `RABBITMQ_PORT`                             | No (defaults)         | `localhost`, `5672`                                                         |
+| `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`                     | Yes                   | No default - the app won't start without them                               |
 | `APP_ENCRYPTION_KEY`                                         | Yes                   | Base64, 32 raw bytes (AES-256) - see `EncryptedStringConverter`             |
 | `APP_JWT_SECRET`                                             | Yes                   | JWT signing secret - rotating it invalidates every outstanding access token |
 | `CORS_ALLOWED_ORIGINS`                                       | No (defaults to none) | Comma-separated; empty means every cross-origin browser request is rejected |
@@ -223,7 +261,10 @@ the Docker image. Each step is gated on the previous one passing.
 
 **First response, if the app looks down:** `/actuator/health` first - `db`/`redis` show up as separate
 components under `readiness`, so the body itself usually says which dependency is the problem before
-you go looking anywhere else. If health is `UP` but requests are still failing, check the application
+you go looking anywhere else. RabbitMQ is deliberately not part of readiness: with the broker down,
+requests still succeed and events wait in `outbox_events` (`select count(*) from outbox_events where
+status <> 'PUBLISHED'` shows the backlog), then publish once it's back. Its status shows under
+`/actuator/health` as `rabbit`. If health is `UP` but requests are still failing, check the application
 logs next (structured JSON in prod, via `logging.structured.format.console: ecs`) - every request
 carries a correlation ID (`CorrelationIdFilter`), so one failing request's log lines can be found
 without wading through unrelated traffic.

@@ -18,6 +18,10 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: taskforge
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       APP_JWT_SECRET: ${APP_JWT_SECRET}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
       DO_SPACES_ENDPOINT: ${DO_SPACES_ENDPOINT}
@@ -30,6 +34,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
 
   postgres:
     image: postgres:16
@@ -50,6 +56,20 @@ services:
     volumes:
       - redis-data:/data
 
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: taskforge
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   redis-data:
+  rabbitmq-data:

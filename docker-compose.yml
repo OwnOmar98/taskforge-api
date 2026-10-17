@@ -15,6 +15,16 @@ services:
     ports:
       - "6380:6379"
 
+  # The management UI (http://localhost:15672, guest/guest) shows the
+  # exchange, each consumer's queue and dead-letter queue, and message rates.
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
   # For manually poking at the storage feature locally without touching real
   # DO Spaces - automated tests spin up their own ephemeral LocalStack via
   # Testcontainers instead and never use this one. Same pinned 3.8 image as
@@ -31,4 +41,5 @@ services:
 
 volumes:
   postgres-data:
+  rabbitmq-data:
   localstack-data:
